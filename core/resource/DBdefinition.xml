@@ -1,0 +1,105 @@
+<!--
+author: dongruoyu
+time: 2020-01-10
+DBdefinition定义了1、数据库连接信息 2、基础数据表结构。
+    <tables>中信息用于：
+    1.创建及修正数据库中基础数据表结构；
+    2.采集程序执行更新操作时创建SQL语句。
+-->
+<DBdefinition>
+    <connection>
+    <!--todo:数据库连接信息-->
+    </connection>
+    <tables>
+        <!--基础信息-->
+        <basicInfo>
+            <!--行情库(1day)-->
+            <table text = "股票日行情" name="StockMarketDaily">
+                <property text = "股票代码" name="StockCode" type="varchar(11)" not-null="true" identifier = "true"/>
+                <property text = "时间" name="Time" type="datetime" not-null="true" identifier = "true"/>
+                <property text = "开盘价" name="Open" type="Numeric" />
+                <property text = "最高价" name="High" type="Numeric" />
+                <property text = "最低价" name="Low" type="Numeric" />
+                <property text = "收盘价" name="Close" type="Numeric" />
+                <property text = "交易量" name="Volume" type="Numeric" />
+                <property text = "交易额(元)" name="Amount" type="Numeric" />
+                <property text = "换手率" name="Tor" type="Numeric" />
+                <property text = "复权因子" name="Adjfactor" type="Numeric" />
+                <property text = "换手率(自由流通股)" name="Tor_f" type="Numeric" />
+                <property text = "量比" name="VolumeRatio" type="Numeric" />
+                <property text = "市盈率TTM" name="PE_ttm" type="Numeric" />
+                <property text = "市盈率LYR" name="PE_lyr" type="Numeric" />
+                <property text = "市净率" name="PB" type="Numeric" />
+                <property text = "市销率" name="PS" type="Numeric" />
+                <property text = "市销率TTM" name="PS_ttm" type="Numeric" />
+                <property text = "股息率" name="DV_ratio" type="Numeric" />
+                <property text = "股息率TTM" name="DV_ratio_ttm" type="Numeric" />
+                <property text = "总股本(股)" name="TotalShare" type="Numeric" />
+                <property text = "流通股本(股)" name="FloatShare" type="Numeric" />
+                <property text = "自由流通股本(股)" name="FreeShare" type="Numeric" />
+                <property text = "总市值(元)" name="TotalMV" type="Numeric" />
+                <property text = "流通市值(元)" name="CircMV" type="Numeric" />
+            </table>
+            <!--交易日历-->
+            <table text = "交易所开休市" name="TradingDays" frequency="none">
+                <property text = "交易所代码" name="exchange" type="varchar(11)" not-null="true" identifier = "true"/>
+                <property text = "日期" name="date" type="varchar(8)" not-null="true" identifier = "true"/>
+                <property text = "是否开市" name="is_open" type="varchar(1)" not-null="true" />
+            </table>
+            <!--股票基础信息-->
+            <table text = "股票基础信息" name="StockBasics" frequency="none">
+                <property text = "股票代码" name="StockCode" type="varchar(11)" not-null="true" identifier = "true"/>
+                <property text = "股票名称" name="Name" type="varchar(50)" not-null="false"/>
+                <property text = "所在地域" name="Area" type="varchar(20)" not-null="false" />
+                <property text = "所属行业" name="industry" type="varchar(50)" not-null="false" />
+                <property text = "股票全称" name="fullname" type="varchar(50)" not-null="false" />
+                <property text = "英文全称" name="enname" type="varchar(50)" not-null="false" />
+                <property text = "所属市场" name="market" type="varchar(20)" not-null="true" comment="主板/中小板/创业板/科创板"/>
+                <property text = "交易所代码" name="exchange" type="varchar(20)" not-null="true" />
+                <property text = "交易货币" name="curr_type" type="varchar(15)" not-null="false" />
+                <property text = "上市状态" name="list_status" type="varchar(1)" not-null="true" comment="L上市 D退市 P暂停上市"/>
+                <property text = "上市日期" name="list_date" type="varchar(8)" not-null="true" />
+                <property text = "退市日期" name="delist_date" type="varchar(8)" not-null="true" />
+                <property text = "是否沪深港通标的" name="is_hs" type="varchar(10)" not-null="false" comment="N否H沪股通S深股通" />
+            </table>
+            <table text = "指数日行情" name="IndexMarketDaily">
+                <property text = "指数代码" name="IndexCode" type="varchar(11)" not-null="true" identifier = "true"/>
+                <property text = "时间" name="Time" type="datetime" not-null="true" identifier = "true"/>
+                <property text = "开盘价" name="Open" type="Numeric" />
+                <property text = "最高价" name="High" type="Numeric" />
+                <property text = "最低价" name="Low" type="Numeric" />
+                <property text = "收盘价" name="Close" type="Numeric" />
+                <property text = "交易量" name="Volume" type="Numeric" />
+                <property text = "交易额(元)" name="Amount" type="Numeric" />
+                <property text = "换手率" name="Tor" type="Numeric" />
+                <property text = "换手率(自由流通股)" name="Tor_f" type="Numeric" />
+                <property text = "市盈率TTM" name="PE_ttm" type="Numeric" />
+                <property text = "市盈率LYR" name="PE_lyr" type="Numeric" />
+                <property text = "市净率" name="PB" type="Numeric" />
+                <property text = "股息率" name="DV_ratio" type="Numeric" />
+                <property text = "股息率TTM" name="DV_ratio_ttm" type="Numeric" />
+                <property text = "总市值(元)" name="TotalMV" type="Numeric" />
+                <property text = "流通市值(元)" name="CircMV" type="Numeric" />
+            </table>
+            <!--测试表-->
+            <table text = "测试表" name="Tests">
+                <property text = "交易所代码" name="exchange" type="varchar(11)" not-null="true" identifier = "true"/>
+                <property text = "测试列2" name="col2" type="varchar(1)" not-null="true" />
+                <property text = "测试列4" name="col4" type="varchar(1)" not-null="true" identifier="true" />
+            </table>
+        </basicInfo>
+
+        <!--特征信息-->
+        <featureInfo>
+            <!--特征库-->
+            <table text = "股票特征库" name = "StockFeatures">
+                <property text = "股票代码" name="StockCode" type="varchar(11)" not-null="true" identifier = "true"/>
+                <!--特征名(包括参数),如IOPVSentiment_beg_30_end_30-->
+                <property text = "特征名" name="fename" type="varchar(200)" not-null="true" identifier = "true"/>
+                <property text = "时间" name="Time" type="varchar(8)" not-null="true" identifier = "true"/>
+                <property text = "频率" name="freq" type="varchar(10)" not-null="true" identifier = "true"/>
+                <property text = "特征值 " name="value" type="numeric" not-null="true" />
+            </table>
+        </featureInfo>>
+    </tables>
+</DBdefinition>

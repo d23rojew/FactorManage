@@ -45,7 +45,8 @@ from core.fundamentals.getfundamentals import fundamentalApi as fapi
 from core.features.DescriptorImpls import *
 from core.features.getfeature import get_feature
 import xarray as xr
-from linearmodels import FamaMacBeth
+import statsmodels.api as sm
+
 class MultiFactor:
     def __init__(self,factors:list,starttime:datetime,endtime:datetime,forcast_period:int,controls:list,freq:str='d'):
         '''
@@ -56,6 +57,7 @@ class MultiFactor:
         :param controls: 控制因子列表，类型:list<Descriptor>，个股在该时间点控制因子值为0则该条数据不参与横截面回归
         '''
         #取收益矩阵
+        self.factors = factors
         ReturnMat = fapi.getReturn(asset_code=None,starttime=starttime,endtime=endtime,forcast_period=forcast_period,freq=freq,asset_type='stock')
         #取因子矩阵
         FactorMatDict = {'feat_'+x.descriptorRefName() : get_feature(descriptor=x,starttime=starttime,endtime=endtime,freq=freq,check=False) for x in factors}
@@ -80,8 +82,18 @@ class MultiFactor:
             MaskedReturn = np.ma.MaskedArray(matchDs['return'].values,mask=~AssembledControlMat,fill_value=np.nan)
         else:
             MaskedReturn = matchDs['return'].values
-        model = FamaMacBeth(MaskedReturn,np.stack(CalibratedFeats))
-        self.report = model.fit(cov_type='kernel') #由于存在重叠样本，使用newey west调整后的t值
+        l = MaskedReturn.shape[0]
+        self.endogs = MaskedReturn
+        self.exogs = np.stack(CalibratedFeats)
+        self.rst = []
+        for i in range(l):
+            try:
+                self.rst.append(sm.OLS(endog=MaskedReturn[i], exog=self.exogs[:, i, :].T, missing='drop').fit())
+            except:
+                self.rst.append(None)
+        # model = FamaMacBeth(MaskedReturn,np.stack(CalibratedFeats))
+        # self.report = model.fit(cov_type='kernel') #由于存在重叠样本，使用newey west调整后的t值
+
 
     report = {}
     '''
@@ -91,12 +103,27 @@ class MultiFactor:
     模型质量：模型R2时间序列、模型R2均值
     '''
 
-    def get_VIF(self):
+    def get_VIF(self,n_threshold,p_threshold):
         '''
-        获取最重要的因子
-        :return:
+        获取重要的因子(在回归时期中,该因子解释横截面差异占横截面总差异的比例的均值高于n%,且大部分时期p值需小于5%)
+        :param n_threshold: 筛选出这段时期内截面解释比例时序平均值在该阈值以上的因子
+        :param p_threshold: 筛选出在这段时期内因子受关注时间点/总时间点的比例达到该值以上的因子(因子受关注:因子收益在该时期显著)
+        :return:重要因子列表
         '''
-        pass
+        explainedRatios = []
+        pvalues = np.zeros(self.factors.__len__())
+        for i in self.rst:
+            ind = self.rst.index(i)
+            if(i is not None):
+                explainedRatioT = []
+                for j in range(self.factors.__len__()):
+                    ratio = np.abs(i.params[j])*np.nanstd(self.exogs[j,ind,:])/np.nanstd(self.endogs[ind])
+                    explainedRatioT.append(ratio)
+                explainedRatios.append(explainedRatioT)
+                pvalues = pvalues + (i.pvalues<0.05).astype(int)
+        explainedRatiosAVG = np.nanmean(np.array(explainedRatios),0)
+        AttentionRatio = pvalues / explainedRatios.__len__()
+        return [self.factors[i] for i in range(self.factors.__len__()) if explainedRatiosAVG[i]>n_threshold and AttentionRatio[i]>p_threshold]
 
     def get_Freturns(self):
         '''

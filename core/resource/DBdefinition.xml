@@ -101,5 +101,14 @@ DBdefinition定义了1、数据库连接信息 2、基础数据表结构。
                 <property text = "特征值 " name="value" type="numeric" not-null="true" />
             </table>
         </featureInfo>>
+
+        <!--模型信息-->
+        <ModelInfo>
+            <!--多因子模型-->
+            <table text = "股票多因子模型" name = "MultiFactorModels">
+                <property text = "生成时间" name="Time" type="datetime" not-null="true" identifier = "true"/>
+                <property text = "模型" name="model" type="BLOB" not-null="true" identifier = "false"/>
+            </table>
+        </ModelInfo>
     </tables>
 </DBdefinition>

@@ -77,7 +77,9 @@ if(__name__=='__main__'):
                            endtime=datetime.strptime('20200113','%Y%m%d'),
                            forcast_period=1,
                            controls = [], freq='d')
-    print(newModel.get_VIF(0.05,0.9))
+    b = newModel.load_model()
+    a = b
+    print(newModel.get_Freturns())
 
 
 #测试tushare并发

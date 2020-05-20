@@ -22,7 +22,9 @@
     用CART随机森林+时序指数库进行择时研究，保存模型用于每日因子收益预测，保存结果用于评估时序模型质量
     (1)模型训练:输入【在用】因子收益序列，输出【在用】模型并存储
     (2)预测:每日日终，在特征指数更新后根据【在用】因子收益择时模型预测一次次日【在用】因子收益。
-3、确定日常模块
+3、组合形成模块
+    根据股票因子暴露、预期因子收益及协方差矩阵，求解股票池有效前沿和切点投资组合
+4、确定日常模块
     每日日程:
         日终：
             执行基础信息、特征、特征指数更新任务；
@@ -46,9 +48,14 @@ from core.features.DescriptorImpls import *
 from core.features.getfeature import get_feature
 import xarray as xr
 import statsmodels.api as sm
+import pickle
+import sqlite3
+from typing import List,Union
+
+
 
 class MultiFactor:
-    def __init__(self,factors:list,starttime:datetime,endtime:datetime,forcast_period:int,controls:list,freq:str='d'):
+    def __init__(self,factors:List[Descriptor],starttime:datetime,endtime:datetime,forcast_period:int,controls:list,freq:str='d'):
         '''
         :param factors: 参与建模的因子列表，类型:list<Descriptor>
         :param starttime: 建模开始时间
@@ -83,18 +90,23 @@ class MultiFactor:
         else:
             MaskedReturn = matchDs['return'].values
         l = MaskedReturn.shape[0]
+        self.dateIndex = matchDs['return'].indexes['Time']
         self.endogs = MaskedReturn
         self.exogs = np.stack(CalibratedFeats)
         self.rst = []
+        noneCount = 0
         for i in range(l):
             try:
                 self.rst.append(sm.OLS(endog=MaskedReturn[i], exog=self.exogs[:, i, :].T, missing='drop').fit())
             except:
                 self.rst.append(None)
+                noneCount+=1
+        if(noneCount==l):
+            raise Exception("所选时间区间内无有效回归样本，请检查基础数据！")
         # model = FamaMacBeth(MaskedReturn,np.stack(CalibratedFeats))
         # self.report = model.fit(cov_type='kernel') #由于存在重叠样本，使用newey west调整后的t值
 
-
+    conn = sqlite3.connect('../fundamentals/testdb')
     report = {}
     '''
     报告项:
@@ -103,7 +115,7 @@ class MultiFactor:
     模型质量：模型R2时间序列、模型R2均值
     '''
 
-    def get_VIF(self,n_threshold,p_threshold):
+    def get_VIF(self,n_threshold,p_threshold)->List[Descriptor]:
         '''
         获取重要的因子(在回归时期中,该因子解释横截面差异占横截面总差异的比例的均值高于n%,且大部分时期p值需小于5%)
         :param n_threshold: 筛选出这段时期内截面解释比例时序平均值在该阈值以上的因子
@@ -111,7 +123,7 @@ class MultiFactor:
         :return:重要因子列表
         '''
         explainedRatios = []
-        pvalues = np.zeros(self.factors.__len__())
+        pvaluesCount = np.zeros(self.factors.__len__())
         for i in self.rst:
             ind = self.rst.index(i)
             if(i is not None):
@@ -120,39 +132,60 @@ class MultiFactor:
                     ratio = np.abs(i.params[j])*np.nanstd(self.exogs[j,ind,:])/np.nanstd(self.endogs[ind])
                     explainedRatioT.append(ratio)
                 explainedRatios.append(explainedRatioT)
-                pvalues = pvalues + (i.pvalues<0.05).astype(int)
+                pvaluesCount = pvaluesCount + (i.pvalues<0.05).astype(int)
         explainedRatiosAVG = np.nanmean(np.array(explainedRatios),0)
-        AttentionRatio = pvalues / explainedRatios.__len__()
+        AttentionRatio = pvaluesCount / explainedRatios.__len__()
         return [self.factors[i] for i in range(self.factors.__len__()) if explainedRatiosAVG[i]>n_threshold and AttentionRatio[i]>p_threshold]
 
-    def get_Freturns(self):
+    def get_Freturns(self)->pd.DataFrame:
         '''
         获取因子收益序列
-        :return:
+        :return:DataFrame，横轴-因子 纵轴-时间
         '''
+        returnDict = {}
+        for i in range(self.factors.__len__()):
+            returnI = []
+            for j in self.rst:
+                if(j is None):
+                    returnI.append(np.nan)
+                else:
+                    returnI.append(j.params[i])
+            returnDict[self.factors[i].descriptorRefName()] = returnI
+        factorReturns = pd.DataFrame(index=self.dateIndex,data=returnDict)
+        return factorReturns
 
-    def get_FreturnCov(self):
+    def get_FreturnCov(self)->pd.DataFrame:
         '''
         获取因子收益协方差矩阵
         :return:
         '''
-        pass
+        return self.get_Freturns().cov()
 
     def save_model(self):
         '''
         存储模型至数据库(做成pickle对象)
-        :return:
+        字段:唯一编号；当前时间(精确到秒)；模型二进制BLOB
         '''
-        pass
+        byteObj = pickle.dumps(self)
+        timeStr = datetime.now().strftime('%Y%m%d%H%M%S')
+        sql = "insert into MultiFactorModels values(?,?)".format(
+            Time=timeStr,ModelByte=byteObj)
+        self.conn.execute("insert into MultiFactorModels values(?,?)",(timeStr,byteObj))
+        self.conn.commit()
 
     @classmethod
-
     def load_model(cls):
         '''
-        从数据库读取模型
-        :return:
+        从数据库读取最近一次存储的模型
+        :return:最近一次存储的多因子模型对象,为MultiFactor
         '''
-        pass
+        cursor = cls.conn.execute("select model from MultiFactorModels where Time = (select max(Time) from MultiFactorModels)")
+        rst = cursor.fetchone()
+        if(type(rst) is tuple):
+            return pickle.loads(rst[0])
+        else:
+            print("库内暂未存储多因子模型")
+            return None
 
     def plot_report(self):
         '''

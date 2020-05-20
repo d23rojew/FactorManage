@@ -40,7 +40,7 @@ class Descriptor(abc.ABC):
         else:
             for ctrl in ctrlDescriptorList:
                 if(type(ctrl) not in Descriptor):
-                    raise("控制因子列表 ctrlDescriptorList 的元素必须为Descriptor对象!")
+                    raise Exception("控制因子列表 ctrlDescriptorList 的元素必须为Descriptor对象!")
             self.ctrlDescriptorList = ctrlDescriptorList
         self.params = params
         self.SQLName = self.descriptorSQLName()

@@ -6,7 +6,7 @@ time: 2020-01-17
 '''
 import sqlite3
 import xml.etree.ElementTree as ET
-
+import time
 
 #重建表结构
 def reconstruct(DBdefinitionXML:ET.ElementTree,conn:sqlite3.Connection):
@@ -74,6 +74,6 @@ if (__name__ == "__main__"):
     Domtree = ET.parse('../resource/DBdefinition.xml')
     conn = sqlite3.connect('testdb')
     reconstruct(Domtree, conn)
-    from core.fundamentals.DataCollectionImpls.UpdateData import *
-    renewTradingDays(conn)
-    renewall(conn)
+    # from core.fundamentals.DataCollectionImpls.UpdateData import *
+    # renewTradingDays(conn)
+    # renewall(conn)

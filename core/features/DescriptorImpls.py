@@ -90,8 +90,54 @@ class Size(Descriptor):
 
     def calcWeekDescriptor(self, stock_code: str, timepoint: str):
         timepoint_dt = datetime.strptime(timepoint,"%Y%m%d")
-        size_df = fundamentalApi.quotes(asset_code = stock_code, starttime=timepoint_dt, endtime=timepoint_dt, period=1, fields='TotalMv', freq='d', adj=None)
+        size_df = fundamentalApi.quotes(asset_code = stock_code, starttime=None, endtime=timepoint_dt-timedelta(days=1), period=1, fields='TotalMv', freq='d', adj=None)
         if(size_df.__len__()==0):
             return np.nan
         else:
             return size_df.values[0][1]
+
+class Illiq(Descriptor):
+    '''
+    Amihud(2002)的流动性度量指标.
+    Illiq = 1/N * sigma_t_N(log(abs(r_t)/Q_t))
+    其中N为测量期总日数，r_t为t日收益率，Q_t为t日交易额。
+
+    计算参数：params = {'N':计算Illiq所用回溯期日数}
+    '''
+    category = {"stock"}
+
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        timepoint_dt = datetime.strptime(timepoint, "%Y%m%d")
+        try:
+            N = self.params['N']
+        except Exception as e:
+            print("params中必须输入计算非流动性回溯期N!")
+            raise(e)
+        priceInfo = fundamentalApi.quotes(asset_code=stock_code, starttime=None,
+                              endtime=timepoint_dt - timedelta(days=1), period=N, fields=['Open','Close','Amount'], freq='d', adj=None)
+        priceInfo['dIlliq'] = abs((priceInfo['Close']/priceInfo['Open'] - 1))/priceInfo['Amount'] * pow(10,8)
+        Illiquidity = priceInfo['dIlliq'].mean()
+        return Illiquidity
+
+    def calcWeekDescriptor(self, stock_code: str, timepoint: str):
+        return self.calcDayDescriptor(stock_code,timepoint)
+
+class BTOP(Descriptor):
+    '''
+    账面市值比(市净率倒数)
+    '''
+    category = {"stock"}
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        timepoint_dt = datetime.strptime(timepoint, "%Y%m%d")
+        priceInfo = fundamentalApi.quotes(asset_code=stock_code, starttime=None,
+                                          endtime=timepoint_dt - timedelta(days=1), period=1,
+                                          fields=['PB'], freq='d', adj=None)
+        try:
+            BTOP = 1/priceInfo['PB'].values[0]
+        except Exception as e:
+            BTOP = np.nan
+        return BTOP
+
+    def calcWeekDescriptor(self, stock_code: str, timepoint: str):
+        BTOP = self.calcDayDescriptor(stock_code, timepoint)
+        return BTOP

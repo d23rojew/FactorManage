@@ -28,7 +28,7 @@ class Descriptor(abc.ABC):
         if(freq is not None):
             self.freq = freq
         if("stock" not in self.category and (prepareProc is not None or ctrlDescriptorList.__len__()>0)):
-            print("特征" + __name__ + "非股票特征，无法设置预处理或控制特征")
+            print("特征" + type(self).__name__ + "非股票特征，无法设置预处理或控制特征")
             self.prepareProc = None
             self.ctrlDescriptorList = []
         if(type(prepareProc) is str):

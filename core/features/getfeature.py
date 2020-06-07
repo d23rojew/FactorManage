@@ -9,6 +9,8 @@ import time
 from tqdm import tqdm
 from core.features.Descriptor import Descriptor
 from core.fundamentals.getfundamentals import fundamentalApi as api
+import math
+from contextlib import closing
 
 def get_feature(descriptor:Union[List[Descriptor],Descriptor],starttime:datetime, endtime:datetime,stock_name:Union[str,List[str]]=None,freq:str='d',check:bool=True)->pd.DataFrame:
     '''
@@ -92,9 +94,9 @@ def RecursiveCalc(descriptor:Descriptor, starttime:datetime, endtime:datetime, s
     # 若检验发现不存在，则临时计算,并将结果存储返回
     else:
         if(descriptor.ctrlDescriptorList.__len__()==0):
-            multicalprocess(MissingInfo,conn)
+            multicalprocess(descriptor,MissingInfo,conn)
         else:
-            multiRegressprocess(MissingInfo,conn)
+            multiRegressprocess(descriptor,MissingInfo,conn)
         conn.close()
         return RecursiveCalc(descriptor, starttime, endtime, stock_name, False)
 
@@ -128,35 +130,41 @@ def get_featureFromDB(stock_name:list,descriptor:Descriptor,starttime:datetime, 
         MissingInfo = ExpectedInfo-ExistInfo
         if(MissingInfo != set()):
             print('检验特征({fename},频率:{freq})时发现{num}个缺漏信息.'.format(fename=descriptor.SQLName,freq=descriptor.freq,num=str(MissingInfo.__len__()))) #todo:后续此处可以用logger记载
-            ReportMissing = [(descriptor,)+x for x in MissingInfo]
+            ReportMissing = [(descriptor,)+ x for x in MissingInfo]
     return df_rst,ReportMissing
 
-def multicalprocess(lackInfo:list,conn:sqlite3.Connection):
+def multicalprocess(descriptor:Descriptor, lackInfo:list,conn:sqlite3.Connection):
     # 并发计算(调用实现了Descriptor对象自行计算), 统一存储(与数据库耦合);
     # 最细粒度计算(单标的, 单时间点);
     cores = multiprocessing.cpu_count()
-    pool = multiprocessing.Pool(processes=cores)
-    resultList = list(tqdm(pool.imap(singleCalcJob,lackInfo),total=lackInfo.__len__(),desc='正在计算特征'))
-    pool.close()
-    print('特征正在入库')
-    t1 = time.time()
-    for rst in resultList:
-        descriptor, stock_code, date, value = rst
-        sql = "Insert or replace into StockFeatures (stockcode,fename,Time,freq,value) values('{stockcode}','{fename}','{Time}','{freq}',{value})"\
-            .format(stockcode=stock_code, fename=descriptor.SQLName, Time=date, freq = descriptor.freq, value=value)
-        try:
-            conn.execute(sql)
-        except Exception as e:
-            raise(e)
-    conn.commit()
-    print('入库耗时:' + str(time.time() - t1))
+    bufferSize = 500000
+    segments = math.ceil(lackInfo.__len__()/bufferSize)
+    for s in range(segments):
+        with closing(multiprocessing.Pool(processes=cores,maxtasksperchild=math.ceil(bufferSize/cores/10))) as pool:
+            beg = s*bufferSize
+            end = (beg + bufferSize) if (beg + bufferSize) < lackInfo.__len__() else lackInfo.__len__()
+            segList = lackInfo[beg:end]
+            resultList = list(tqdm(pool.imap(singleCalcJob,segList),desc='正在计算第{i}段，共{s}段'.format(i=str(s+1),s=segments),total=segList.__len__()))
+            for rst in resultList:
+                stock_code, date, value = rst
+                sql = "Insert or replace into StockFeatures (stockcode,fename,Time,freq,value) values('{stockcode}','{fename}','{Time}','{freq}',{value})"\
+                    .format(stockcode=stock_code, fename=descriptor.SQLName, Time=date, freq = descriptor.freq, value=value)
+                try:
+                    conn.execute(sql)
+                except Exception as e:
+                    raise(e)
+            t1 = time.time()
+            conn.commit()
+            t2 = time.time()
+            print("入库耗时"+str(t2-t1)+"秒!")
+    print('特征计算完毕！')
 
 def singleCalcJob(tuple:tuple):
     descriptor, stock_code, date = tuple
     rst = descriptor.calcDescriptor[descriptor.freq](stock_code, date)
     if(rst is None or (type(rst) is not str and np.isnan(rst))):
         rst= 'null'
-    return (descriptor, stock_code, date, rst)
+    return (stock_code, date, rst)
 
 def multiRegressprocess(lackInfo:list,conn:sqlite3.Connection):
     '''

@@ -7,14 +7,17 @@
 对其它api的假定:
 get_feature(descriptor:Descriptor,starttime:datetime, endtime:datetime,stock_name:list=None,check:bool=True)
 descriptor的频率交由get_feature来指定，并在对象初始化中被剔除。
+
+todo:现在回头补写一些基础数据和因子特征算法，用multifactor模型研究一下因子收益的持续性；
+     加入残差动量因子:将因子横街面回归残差
 '''
-from typing import List
+from typing import List,Union
 from datetime import datetime
 from core.features.Descriptor import Descriptor
 from core.fundamentals.getfundamentals import fundamentalApi as fapi
 from core.features.getfeature import get_feature
 class TSmodel:
-    def __init__(self,asset_code:str,factors:List[Descriptor],starttime:datetime,endtime:datetime,freq:str='d',forcast_period:int=1):
+    def __init__(self,asset_code:str,factors:List[Union[Descriptor]],starttime:datetime,endtime:datetime,freq:str='d',forcast_period:int=1):
         '''
         :param stockcode: 待预测标的
         :param factors: 特征列表

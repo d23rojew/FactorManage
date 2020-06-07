@@ -51,7 +51,7 @@ class fundamentalApi:
         :param starttime:开始时间(period/starttime任填一个)
         :param endtime:结束时间
         :param period:获取的价格区间总长度(period/starttime任填一个)
-        :param field:Open/High/Low/Close/TotalMV
+        :param field:Open/High/Low/Close/TotalMV/...(见DBdefinition.xml)
         :param freq:'min'(分钟)/'day'(日)
         :param adj:'None'(未复权)/'qfq'(前复权)/'hfq'(后复权)
         :param asset_type:'stock'(股票)/'index'(指数)

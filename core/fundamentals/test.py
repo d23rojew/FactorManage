@@ -24,8 +24,8 @@
 # from time import time
 # from core.fundamentals.getfundamentals import fundamentalApi as fapi
 # t1 = time()
-# df = fapi.quotes(asset_code=None, starttime=None, endtime=datetime.datetime.strptime('20200203','%Y%m%d'),
-#                                               period=201, fields=['Open','High','Low','Close'], freq='d',
+# df = fapi.quotes(asset_code=None, starttime=None, endtime=datetime.datetime.strptime('20200524','%Y%m%d'),
+#                                               period=601, fields=['Open'], freq='d',
 #                                               adj='hfq')
 # returnMat = fapi.getReturn(asset_code=None,starttime=datetime.datetime.strptime('20190203','%Y%m%d'), endtime=datetime.datetime.strptime('20200203','%Y%m%d'),forcast_period=10)
 # print(time()-t1)
@@ -60,26 +60,30 @@
 #     import datetime
 #     import time
 #     t1 = time.time()
-#     # aa = get_feature(CapitalGainOverhang(params={'N':201,'v':17}, freq='min',prepareProc=['winsor']),datetime.datetime.strptime('20200324000000','%Y%m%d%H%M%S'), datetime.datetime.strptime('20200325144444','%Y%m%d%H%M%S'),check=True)
-#     beta = get_feature(descriptor=Beta(params={'period':100,'index':'399300.SZ'}, freq='d',prepareProc=['winsor']),starttime= datetime.datetime.strptime('20200103','%Y%m%d'),endtime= datetime.datetime.strptime('20200113','%Y%m%d'),check=True)
-#     size = get_feature(descriptor=Size(freq='min',prepareProc=['winsor','ln','std'],params={'comment':'logtest'}),starttime= datetime.datetime.strptime('20200103','%Y%m%d'),endtime= datetime.datetime.strptime('20200113','%Y%m%d'),check=True)
-#     print(time.time()-t1)
-#     print(beta)
+    # aa = get_feature(descriptor=Beta(params={'period':100,'index':'399300.SZ'}, freq='d',prepareProc=['winsor']),starttime= datetime.datetime.strptime('20191220','%Y%m%d'),endtime= datetime.datetime.strptime('20200113','%Y%m%d'),check=False)
+    # aa = get_feature(CapitalGainOverhang(params={'N':201}, freq='d',prepareProc=['winsor']),datetime.datetime.strptime('20180101','%Y%m%d'), datetime.datetime.strptime('20200113','%Y%m%d'),check=True)
+    # aa = get_feature(descriptor=Beta(params={'period':100,'index':'399300.SZ'}, freq='d',prepareProc=['winsor']),starttime= datetime.datetime.strptime('20180101','%Y%m%d'),endtime= datetime.datetime.strptime('20200113','%Y%m%d'),check=True)
+    # aa = get_feature(descriptor=Size(freq='d',prepareProc=['winsor','ln','std'],params={'comment':'logtest'}),starttime= datetime.datetime.strptime('20180101','%Y%m%d'),endtime= datetime.datetime.strptime('20200113','%Y%m%d'),check=True)
+    # aa = get_feature(descriptor=Illiq(freq='d', prepareProc=None, params={'N': 90}),starttime= datetime.datetime.strptime('20180101','%Y%m%d'),endtime= datetime.datetime.strptime('20200113','%Y%m%d'),check=True)
+    # aa = get_feature(descriptor=BTOP(freq='d', prepareProc=None),starttime= datetime.datetime.strptime('20180101','%Y%m%d'),endtime= datetime.datetime.strptime('20200113','%Y%m%d'),check=True)
+    # print(time.time()-t1)
 
 #测试multifactor
 if(__name__=='__main__'):
     from core.model.MultiFactor import MultiFactor
     from datetime import datetime
     from core.features.DescriptorImpls import *
-    newModel = MultiFactor(factors=[Beta(params={'period':100,'index':'399300.SZ'}, freq='d',prepareProc=['winsor'])
-                                    ,Size(freq='min',prepareProc=['winsor','ln','std'],params={'comment':'logtest'})],
-                           starttime=datetime.strptime('20200103','%Y%m%d'),
+    f1 = Beta(params={'period':100,'index':'399300.SZ'} ,freq='d',prepareProc=['winsor','std'])
+    f2 = Size(freq='d',prepareProc=['winsor','ln','std'],params={'comment':'logtest'})
+    f3 = BTOP(freq='d', prepareProc=['winsor','std'])
+    f4 = CapitalGainOverhang(params={'N':201}, freq='d',prepareProc=['winsor','std'])
+    f5 = Illiq(freq='d', prepareProc=['winsor','std'], params={'N': 90})
+    newModel = MultiFactor(factors=[f1,f2,f3,f4,f5],
+                           starttime=datetime.strptime('20200101','%Y%m%d'),
                            endtime=datetime.strptime('20200113','%Y%m%d'),
                            forcast_period=1,
                            controls = [], freq='d')
-    b = newModel.load_model()
-    a = b
-    print(newModel.get_Freturns())
+    newModel.uptodate(datetime.strptime('20200123','%Y%m%d'))
 
 
 #测试tushare并发

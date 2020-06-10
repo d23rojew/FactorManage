@@ -141,3 +141,23 @@ class BTOP(Descriptor):
     def calcWeekDescriptor(self, stock_code: str, timepoint: str):
         BTOP = self.calcDayDescriptor(stock_code, timepoint)
         return BTOP
+
+class PastReturn(Descriptor):
+    '''
+    过往收益.参数:n1,n2->股票从t-n1-1日起共n2日的累计收益(即t-n1-n2~t-n1-1日的收益)
+    todo.
+    '''
+    category = {"stock","future"}
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        timepoint_dt = datetime.strptime(timepoint, "%Y%m%d")
+        try:
+            n1 = self.params['n1']   #间隔期
+            n2 = self.params['n2']   #总长度
+            if(n2<1):
+                raise("n2至少为1!")
+        except Exception as e:
+            print("参数异常！")
+            raise(e)
+        priceInfo = fundamentalApi.quotes(asset_code=stock_code, starttime=None,
+                                          endtime=timepoint_dt - timedelta(days=1), period=1,
+                                          fields=['Open','Close'], freq='d', adj=None)

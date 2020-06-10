@@ -220,10 +220,18 @@ class MultiFactor:
     @property
     def FreturnCorr(self)->pd.DataFrame:
         '''
-        获取因子收益协方差矩阵
+        获取因子收益相关系数
         :return:
         '''
         return self.Freturns.corr()
+
+    @property
+    def FreturnCov(self)->pd.DataFrame:
+        '''
+        获取因子收益协方差矩阵
+        :return:
+        '''
+        return self.Freturns.cov()
 
     @property
     def expFreturn(self):
@@ -268,6 +276,7 @@ class MultiFactor:
     def report(self):
         '''
         图形化展示(保存)因子模型报告(写入excel模板)
+        todo.
         '''
 
         pass
@@ -289,3 +298,12 @@ class MultiFactor:
         df_ForcastReturns = df_factorLoading.mul(expFreturnLi, axis=1)
         df_ForcastReturns['e_ret'] = df_ForcastReturns.sum(axis = 1)
         return df_ForcastReturns
+
+    def bestPortfolio(self,Rf)->pd.Series:
+        '''
+        根据给定的无风险利率计算切点投资组合.
+        todo.
+        :param Rf:
+        :return:
+        '''
+        pass

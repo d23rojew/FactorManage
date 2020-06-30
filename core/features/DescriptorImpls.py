@@ -206,3 +206,4 @@ class FomulaDailyFactor(Descriptor):
 
     category = {"stock","future"}
     def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        pass

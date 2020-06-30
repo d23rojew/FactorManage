@@ -6,6 +6,7 @@ import itertools
 import multiprocessing
 import numpy as np
 import time
+from .util import getFirstDate
 from tqdm import tqdm
 from core.features.Descriptor import Descriptor
 from core.fundamentals.getfundamentals import fundamentalApi as api
@@ -41,9 +42,14 @@ def get_feature(descriptor:Union[List[Descriptor],Descriptor],starttime:datetime
     if(realFreq == freq):
         return RecursiveCalc(descriptor, starttime, endtime, stock_name, check)
     #获取对外输出DataFrame的时间轴
-    timeSpan = pd.DataFrame(index=api.TradingTimePoints('stock', starttime, endtime, freq).index, columns={})
+    ind = api.TradingTimePoints('stock', starttime, endtime, freq).index
+    if(ind.__len__()==0):
+        return pd.DataFrame()
+    timeSpan = pd.DataFrame(index = ind,data={})
     timeSpan['Time'] = timeSpan.index
     descriptor.freq = realFreq
+    if(realFreq in ('w','M')):
+        starttime = getFirstDate(starttime,realFreq)
     fetMat = RecursiveCalc(descriptor, starttime, endtime, stock_name, check)
     if(realFreq=='d'):
         timeSpan['freqMatch'] = list(timeSpan.index.strftime('%Y%m%d'))

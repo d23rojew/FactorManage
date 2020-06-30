@@ -70,12 +70,12 @@ class MultiFactor:
         :param controls: 控制因子列表，类型:list<Descriptor>，个股在该时间点控制因子值为0则该条数据不参与横截面回归
         '''
         #记录模型参数
-        self.timespan = (starttime,endtime)            #模型样本起止时间
+        self.timespan = [starttime,endtime]            #模型样本起止时间
         self.factors = factors                         #所选因子
         self.forcast_period = forcast_period           #预测期
         self.controls = controls                       #控制因子
         self.freq = freq                               #时间频率
-        self.optimalMAperiod = {x.descriptorRefName:20 for x in factors}   #预测因子收益所用均线周期
+        self.optimalMAperiod = {x.descriptorRefName():20 for x in factors}   #预测因子收益所用均线周期
         #获得模型日期序列、计算因子收益
         self.dateIndex,self.rst = self.__getfundamental(self.timespan)
         #计算因子预期收益
@@ -96,6 +96,7 @@ class MultiFactor:
         self.dateIndex = self.dateIndex.append(new_dateIndex)
         self.rst = self.rst + new_rst
         self.__factorReturnOptimizer()
+        self.timespan[1] = endtime
         print("多因子模型更新完毕!")
 
     def __getfundamental(self,timespan):
@@ -147,7 +148,7 @@ class MultiFactor:
         out_dateIndex = matchDs['return'].indexes['Time']
         return (out_dateIndex,out_rst)
 
-    def factorReturnOptimizer(self):
+    def __factorReturnOptimizer(self):
         '''
         使用移动平均线预测因子收益。针对每个因子收益序列，(在上个最优周期周围)找到预测收益离差最小的移动平均线,并给出下期的因子收益预测。
         :param timespan:
@@ -167,7 +168,7 @@ class MultiFactor:
                 self.optimalMAperiod[f.descriptorRefName()] = candidateSet.pop()
             else:
                 minDiff = np.inf
-                factorName = self.factors[f.descriptorRefName()].descriptorRefName()
+                factorName = f.descriptorRefName()
                 factorReturnSeries = self.Freturns[factorName]
                 for p in candidateSet:
                     newDiff = abs(factorReturnSeries - factorReturnSeries.rolling(p).mean().shift(1)).mean()
@@ -243,7 +244,7 @@ class MultiFactor:
         for f in self.factors:
             fname = f.descriptorRefName()
             p = self.optimalMAperiod[fname]
-            expFreturn[fname] = self.Freturns[fname].values[-p:].mean()
+            expFreturn[fname] = np.nanmean(self.Freturns[fname].values[-p:])
         return expFreturn
 
 
@@ -289,7 +290,7 @@ class MultiFactor:
         '''
         nextDate = fapi.TradingTimePoints(asset_code=None, starttime=self.timespan[1] + timedelta(days=1),
                                endtime=self.timespan[1] + timedelta(days=10), freq=self.freq).index[0].to_pydatetime()
-        FactorMatDict = {x.descriptorRefName() : get_feature(descriptor=x,starttime=nextDate,endtime=nextDate,freq=self.freq,check=False) for x in self.factors}
+        FactorMatDict = {x.descriptorRefName() : get_feature(descriptor=x,starttime=nextDate,endtime=nextDate,freq=self.freq,check=True) for x in self.factors}
         matchDs = xr.Dataset(FactorMatDict)
         CalibratedFeats = {fename:matchDs[fename].values.flatten() for fename in matchDs}
         stocks = matchDs.indexes['StockCode']

@@ -151,13 +151,58 @@ class PastReturn(Descriptor):
     def calcDayDescriptor(self, stock_code: str, timepoint: str):
         timepoint_dt = datetime.strptime(timepoint, "%Y%m%d")
         try:
-            n1 = self.params['n1']   #间隔期
-            n2 = self.params['n2']   #总长度
+            n1,n2 = self.params['wait'],self.params['cum']   #间隔期,总长度
+            if (type(n1) is not int or type(n2) is not int):
+                raise Exception("间隔期wait、区间长度cum必须为非负整数!")
             if(n2<1):
-                raise("n2至少为1!")
+                raise Exception("区间长度cum至少为1!")
         except Exception as e:
             print("参数异常！")
             raise(e)
         priceInfo = fundamentalApi.quotes(asset_code=stock_code, starttime=None,
-                                          endtime=timepoint_dt - timedelta(days=1), period=1,
-                                          fields=['Open','Close'], freq='d', adj=None)
+                                          endtime=timepoint_dt - timedelta(days=1), period=n1+n2,
+                                          fields=['Open','Close'], freq='d', adj='hfq')
+        try:
+            momentum = priceInfo['Close'].values[n1]/priceInfo['Open'].values[n1+n2-1] - 1
+        except:
+            momentum = np.nan
+        return momentum
+
+class FomulaDailyFactor(Descriptor):
+    '''
+    公式因子，用于迭代
+    '''
+    #算子定义区
+    @classmethod
+    def solveTree(cls,formulaTree:dict,stock_code:str,timepoint:str,n=0):
+        '''
+        中间节点:
+            普通算子:max,corr,log,delay,...
+        叶节点:
+            特殊算子:close,open,high,low,volumn...
+            常数算子:const
+        '''
+        func,params = formulaTree.popitem()  #func必定为算子,params在func为中间节点时为字典{'func1':{},'func2':{},'const':6},叶节点时func='const'时为常数,func='OPEN'等数据项时为'null'
+        if(func=='const'):
+            return params
+        if(func in ('OPEN','CLOSE','HIGH','LOW','VOLUMN')):
+            #todo 用stock_code,timepoint,n在内存中取数
+            return 0
+        if(func=='max'):
+            if(params.__len__()!=2):
+                raise Exception('max有2个参数!')
+            calcedRst = [cls.solveTree({subfunc:subparam},stock_code,timepoint,n) for subfunc,subparam in params.items()]
+            return np.max(calcedRst)
+        if(func=='corr'):
+            if(params.__len__()!=3):
+                raise Exception('corr有3个参数!')
+            subfunc1,subparam1 = params.popitem()
+            subfunc2,subparam2 = params.popitem()
+            useless,period = params.popitem()
+            series1 = [cls.solveTree({subfunc1:subparam1},stock_code,timepoint,n+i) for i in range(period)]
+            series2 = [cls.solveTree({subfunc2:subparam2},stock_code,timepoint,n+i) for i in range(period)]
+            return np.corrcoef(series1,series2)[0,1]
+
+
+    category = {"stock","future"}
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):

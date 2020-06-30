@@ -127,6 +127,8 @@ class fundamentalApi:
         filtSeries = (priceInfo['Open']==priceInfo['High']).astype(bool) &(priceInfo['Open']==priceInfo['Low']).astype(bool) &(priceInfo['Open']==priceInfo['Close']).astype(bool)
         priceInfo.loc[filtSeries,'Open'] = np.nan  #在开仓时必须为正常行情，否则剔出样本
         panels = priceInfo.pivot(columns='StockCode',values=['Open','Close'])
+        if(panels.__len__()==0):
+            return pd.DataFrame()
         returnMat = panels['Close'].shift(1-forcast_period)/panels['Open'] - 1
         return returnMat
 

@@ -282,7 +282,6 @@ class MultiFactor:
 
         pass
 
-    @property
     def forcastStkReturn(self):
         '''
         给出下一期股票收益的预测

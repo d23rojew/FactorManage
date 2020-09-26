@@ -145,7 +145,6 @@ class BTOP(Descriptor):
 class PastReturn(Descriptor):
     '''
     过往收益.参数:n1,n2->股票从t-n1-1日起共n2日的累计收益(即t-n1-n2~t-n1-1日的收益)
-    todo.
     '''
     category = {"stock","future"}
     def calcDayDescriptor(self, stock_code: str, timepoint: str):
@@ -168,9 +167,106 @@ class PastReturn(Descriptor):
             momentum = np.nan
         return momentum
 
+class FormulaAlpha1(Descriptor):
+    '''
+    价量背离：短周期内成交量逐步提升，价格不断下降；或成交量逐步下降，价格不断上升
+    公式:1/4 *(corr(open,volume)+corr(high,volume)+corr(low,volume)+corr(close,volume))
+    参数:回溯期t
+    '''
+    category = {"stock","future"}
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        timepoint_dt = datetime.strptime(timepoint, "%Y%m%d")
+        try:
+            t = self.params['t']  #计算量价背离所用回溯期数
+            if (type(t) is not int or t<1):
+                raise Exception("回溯期t必须为大于1的整数!")
+        except Exception as e:
+            print("参数异常！")
+            raise(e)
+        priceInfo = fundamentalApi.quotes(asset_code=stock_code, starttime=None,
+                                          endtime=timepoint_dt - timedelta(days=1), period=t,
+                                          fields=['Open','High','Low','Close','Volume'], freq='d', adj='hfq')
+        try:
+            depart = 0.25*(np.corrcoef(priceInfo['Open'],priceInfo['Volume'])
+                             +np.corrcoef(priceInfo['High'],priceInfo['Volume'])
+                             +np.corrcoef(priceInfo['Low'],priceInfo['Volume'])
+                             +np.corrcoef(priceInfo['Close'],priceInfo['Volume']))[0,1]
+        except:
+            depart = np.nan
+        return depart
+
+class FormulaAlpha2(Descriptor):
+    '''
+    异常成交量：前一日成交量相对于前一段时间平均成交量的相对变动
+    公式:volume/mean(volume)
+    参数:用于计算平均成交量的参考期t
+    '''
+    category = {"stock","future"}
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        timepoint_dt = datetime.strptime(timepoint, "%Y%m%d")
+        try:
+            t = self.params['t']  #计算量价背离所用回溯期数
+            if (type(t) is not int or t<1):
+                raise Exception("回溯期t必须为大于1的整数!")
+        except Exception as e:
+            print("参数异常！")
+            raise(e)
+        priceInfo = fundamentalApi.quotes(asset_code=stock_code, starttime=None,
+                                          endtime=timepoint_dt - timedelta(days=1), period=t,
+                                          fields=['Volume'], freq='d', adj='hfq')
+        try:
+            abnormalVol = priceInfo['Volume'][0]/np.mean(priceInfo['Volume'])
+        except:
+            abnormalVol = np.nan
+        return abnormalVol
+
+class FormulaAlpha3(Descriptor):
+    '''
+    量幅背离：短周期内成交量逐步提升，振幅不断下降；或成交量逐步下降，振幅不断提升
+    公式:corr(high/low,volume)
+    参数:回溯期t
+    '''
+    category = {"stock","future"}
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        timepoint_dt = datetime.strptime(timepoint, "%Y%m%d")
+        try:
+            t = self.params['t']  #计算量价背离所用回溯期数
+            if (type(t) is not int or t<1):
+                raise Exception("回溯期t必须为大于1的整数!")
+        except Exception as e:
+            print("参数异常！")
+            raise(e)
+        priceInfo = fundamentalApi.quotes(asset_code=stock_code, starttime=None,
+                                          endtime=timepoint_dt - timedelta(days=1), period=t,
+                                          fields=['High','Low','Volume'], freq='d', adj='hfq')
+        try:
+            depart = np.corrcoef(priceInfo['High']/priceInfo['Low'],priceInfo['Volume'])[0,1]
+        except:
+            depart = np.nan
+        return depart
+
+class NearCloseVol(Descriptor):
+    '''
+    上个交易日尾盘成交量占比(尾盘n分钟VS整日成交量)
+    '''
+    category = {"stock"}
+    def calcDayDescriptor(self, stock_code: str, timepoint: str):
+        try:
+            N = self.params['N']
+            if(type(N) is not int or N<1 or N>240):
+                raise("N必须为0~240之间的正整数!")
+        except Exception as e:
+            print("params中必须输入计算获取尾盘分钟数N!")
+            raise(e)
+        endtime = datetime.strptime(timepoint,"%Y%m%d")
+        df_dayminute = fundamentalApi.quoteMinute(stock_code=stock_code,starttime=None,endtime=endtime,period=240,fields='Volume')
+        ratio = df_dayminute["Volume"].iloc[0:N].sum()/df_dayminute["Volume"].sum()
+        return ratio
+
 class FomulaDailyFactor(Descriptor):
     '''
-    公式因子，用于迭代
+    公式因子，用于迭代.根据输入的公式树结构以及预先定义的算子,确定计算因子的公式
+    todo 建设中
     '''
     #算子定义区
     @classmethod
@@ -185,7 +281,7 @@ class FomulaDailyFactor(Descriptor):
         func,params = formulaTree.popitem()  #func必定为算子,params在func为中间节点时为字典{'func1':{},'func2':{},'const':6},叶节点时func='const'时为常数,func='OPEN'等数据项时为'null'
         if(func=='const'):
             return params
-        if(func in ('OPEN','CLOSE','HIGH','LOW','VOLUMN')):
+        if(func in ('OPEN','CLOSE','HIGH','LOW','VOLUME')):
             #todo 用stock_code,timepoint,n在内存中取数
             return 0
         if(func=='max'):

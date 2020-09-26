@@ -1,13 +1,16 @@
 import pandas as pd
-import datetime
+from datetime import timedelta,datetime
 import sqlite3
 import tushare as ts
+from typing import *
 import time
+import itertools
+from multiprocessing.pool import ThreadPool
 from tqdm import tqdm
 from core.fundamentals.DataCollectionImpls.DataCollection import DataCollection
 from core.fundamentals.getfundamentals import fundamentalApi as fapi
 
-ts.set_token('46be315f285d45d0db65eb8cba19b61a6b90599169230ed2b83d2470')
+ts.set_token('83a82fadb0bbb803f008b31ce09479e5107f4aba3f28d5df2174c642')
 api = ts.pro_api()
 
 class CollectTradingDay(DataCollection):
@@ -29,7 +32,7 @@ class CollectTradingDay(DataCollection):
     def renew(cls,conn:sqlite3.Connection):
         print('正在从tushare更新交易日历...')
         try:
-            cls.get_data(StockCode=None,starttime=datetime.datetime.now()-datetime.timedelta(weeks=520),endtime=datetime.datetime.now()+datetime.timedelta(weeks=52),conn=conn)
+            cls.get_data(StockCode=None,starttime=datetime.now()-timedelta(weeks=520),endtime=datetime.now()+timedelta(weeks=52),conn=conn)
             print('交易日历更新完毕！')
         except Exception as e:
             print("通过Tushare更新交易日历时出现错误:"+str(e.args))
@@ -83,7 +86,7 @@ class CollectStockDailyPrice(DataCollection):
 
     @classmethod
     def renew(cls,conn:sqlite3.Connection):
-        trade_date = fapi.trade_cal('SSE', '20180101', datetime.datetime.now().strftime('%Y%m%d'),'1')
+        trade_date = fapi.trade_cal('SSE', '20100101', datetime.now().strftime('%Y%m%d'),'1')
         MissingDates = [];
         lastDate = trade_date["date"].tolist()[-1]
         beginDate, endDate = None, None
@@ -105,8 +108,8 @@ class CollectStockDailyPrice(DataCollection):
                     beginDate,endDate = None,None
         if(MissingDates.__len__()>0):
             for bgdt,eddt in tqdm(MissingDates,desc='正在从tushare更新日度行情...',ncols=90):
-                cls.get_data('',datetime.datetime.strptime(bgdt,'%Y%m%d')
-                             ,datetime.datetime.strptime(eddt,'%Y%m%d')
+                cls.get_data('',datetime.strptime(bgdt,'%Y%m%d')
+                             ,datetime.strptime(eddt,'%Y%m%d')
                              ,conn)
         print('日度行情更新完毕！')
     mapper = {'StockMarketDaily':{'StockCode':'ts_code','Time':'trade_date','Open':'open','High':'high','Low':'low','Close':'close','Volume':'vol','Amount':'amount'}}
@@ -139,7 +142,7 @@ class CollectAdjFactor(DataCollection):
 
     @classmethod
     def renew(cls,conn:sqlite3.Connection):
-        trade_date = fapi.trade_cal('SSE', '20180101', datetime.datetime.now().strftime('%Y%m%d'),'1')
+        trade_date = fapi.trade_cal('SSE', '20100101', datetime.now().strftime('%Y%m%d'),'1')
         lastDate = trade_date["date"].tolist()[-1]
         trade_date.rename(columns = {'date':'trade_date'},inplace=True)
         print('正在自检复权因子...')
@@ -164,8 +167,8 @@ class CollectAdjFactor(DataCollection):
                     beginDate,endDate = None,None
         if(MissingDates.__len__()>0):
             for bgdt,eddt in tqdm(MissingDates,desc='正在从tushare更新复权因子...',ncols=90):
-                cls.get_data('',datetime.datetime.strptime(bgdt,'%Y%m%d')
-                             ,datetime.datetime.strptime(eddt,'%Y%m%d')
+                cls.get_data('',datetime.strptime(bgdt,'%Y%m%d')
+                             ,datetime.strptime(eddt,'%Y%m%d')
                              ,conn)
         print('复权因子更新完毕！')
 
@@ -223,7 +226,7 @@ class CollectDailyBasics(DataCollection):
 
     @classmethod
     def renew(cls,conn:sqlite3.Connection):
-        trade_date = fapi.trade_cal('SSE', '20180101', datetime.datetime.now().strftime('%Y%m%d'),'1')
+        trade_date = fapi.trade_cal('SSE', '20100101', datetime.now().strftime('%Y%m%d'),'1')
         lastDate = trade_date["date"].tolist()[-1]
         trade_date.rename(columns = {'date':'trade_date'},inplace=True)
         print('正在自检股票每日基本面指标...')
@@ -248,8 +251,8 @@ class CollectDailyBasics(DataCollection):
                     beginDate,endDate = None,None
         if(MissingDates.__len__()>0):
             for bgdt,eddt in tqdm(MissingDates,desc='正在从tushare更新股票基本面指标...',ncols=90):
-                cls.get_data('',datetime.datetime.strptime(bgdt,'%Y%m%d')
-                             ,datetime.datetime.strptime(eddt,'%Y%m%d')
+                cls.get_data('',datetime.strptime(bgdt,'%Y%m%d')
+                             ,datetime.strptime(eddt,'%Y%m%d')
                              ,conn)
         print('基本面指标更新完毕！')
 
@@ -330,3 +333,103 @@ class CollectHS300Daily(DataCollection):
         cls.get_data('399300.SZ',None,None,conn)
         print('沪深300行情更新完毕！')
     mapper = {'IndexMarketDaily':{'IndexCode':'ts_code','Time':'trade_date','Open':'open','High':'high','Low':'low','Close':'close','Volume':'vol','Amount':'amount'}}
+
+class CollectStockMinute(DataCollection):
+    '''
+    从tushare.pro_bar获取分钟行情
+    tushare.pro_bar只允许逐股票获取数据，检查缺漏和更新都比较麻烦
+    目前设想:renew时，逐只股票检查行情完整性；列出股票应有交易日清单，检查
+            该股票该日是否有数据(即不精确到分钟);最后得出[(股票,缺失日)...]
+    '''
+    @classmethod
+    def singleDownLoadJob(cls,tuple: tuple) -> pd.DataFrame:
+        stockcode, (begin, end) = tuple
+        start_date = datetime.strptime(begin, '%Y%m%d').strftime('%Y-%m-%d 00:00:00')
+        end_date = datetime.strptime(end, '%Y%m%d').strftime('%Y-%m-%d 23:59:59')
+        tryCount = 0
+        while True:
+            try:
+                tryCount+=1
+                df_minute = ts.pro_bar(stockcode
+                                       , start_date=start_date
+                                       , end_date=end_date
+                                       , freq='1min')
+                if(df_minute is None or df_minute.__len__()==0):
+                    raise Exception("获取股票{a} {b}~{c}分钟行情时出现异常".format(a=stockcode,b=start_date,c=end_date))
+                return df_minute
+            except Exception as e:
+                if(tryCount==3):
+                    print(e.args[0])
+                    return None
+                time.sleep(5)
+
+    @classmethod
+    def apidata(cls, StockCode:Union[str,list] , starttime: datetime, endtime: datetime) -> pd.DataFrame:
+        '''
+        对stockcode列表和日期区间适当分块，通过多进程并发增加下载速度.
+        Tips:
+            a. 1日全市场分钟数据大概200MB，因此大批量下载时需分批调多次用该api，避免内存占用
+            b. 由于原生tushare分钟行情Api仅支持单股票下载，在多股票、多时间点下载时尽量保留
+            较长时间区间，在股票层面上分割
+        '''
+        if type(StockCode) is str:
+            StockCode = [StockCode]
+        DF_dates = fapi.trade_cal('SSE',starttime.strftime('%Y%m%d'),endtime.strftime('%Y%m%d'),'1')['date']
+        span = 0
+        split_dateSpan = []
+        for i in range(DF_dates.__len__()):
+            span += 1
+            if(span==1):
+                begin = DF_dates[i]
+            if(span==33 or i == DF_dates.__len__()-1):#由于单次获取8000行限制，每次下载区间不超过33天
+                split_dateSpan.append((begin,DF_dates[i]))
+                span = 0
+        downloadList = list(itertools.product(StockCode,split_dateSpan))
+        rstList = []
+        pool = ThreadPool()
+        # pbar = tqdm(total=downloadList.__len__(), desc='正在分段下载分钟行情',ncols=90)
+        def remindDone(df:pd.DataFrame):
+            if (df is not None and df.__len__() > 0):
+                rstList.append(df)
+                # pbar.update(1)
+        for job in downloadList:
+            pool.apply_async(cls.singleDownLoadJob,args=(job,),callback=remindDone)
+            time.sleep(60/500)
+        pool.close()
+        pool.join()
+        res = pd.DataFrame()
+        for df in rstList:
+            res = res.append(df)
+        return res
+
+    @classmethod
+    def renew(cls,conn:sqlite3.Connection):
+        stocks = fapi.stockinfo()
+        today = datetime.now().strftime('%Y%m%d')
+        DF_dates = fapi.trade_cal('SSE','20100101',today,'1')['date']
+        MissingDates = [];
+        for stockcode,field in tqdm(list(stocks.iterrows()),desc="正在自检分钟行情...",ncols=90):
+            begin_date = field['list_date']
+            end_date = field['delist_date'] if field['delist_date'] is not None else '99999999'
+            DF_dates4stock = DF_dates[(DF_dates>begin_date) & (DF_dates<=end_date)]
+            beginDate, endDate = None, None
+            for date in DF_dates4stock.values:
+                timestr = datetime.strptime(date,'%Y%m%d').strftime('%Y-%m-%d') + ' 10:00:00'
+                is_exist = cls.probe(conn,ts_code=stockcode,trade_time=timestr)
+                if (not is_exist):
+                    endDate = date
+                    if (not beginDate):
+                        beginDate = date
+                    if (date == DF_dates4stock.values[-1]):
+                        MissingDates.append((stockcode,beginDate, endDate))
+                        beginDate, endDate = None, None
+                elif (beginDate):
+                    MissingDates.append((stockcode,beginDate, endDate))
+                    beginDate, endDate = None, None
+        if (MissingDates.__len__() > 0):
+            for stockcode, bgdt, eddt in tqdm(MissingDates, desc='正在从tushare更新分钟行情...', ncols=90):
+                cls.get_data(stockcode, datetime.strptime(bgdt, '%Y%m%d')
+                             , datetime.strptime(eddt, '%Y%m%d')
+                             , conn)
+    mapper = {'StockMarketMinute': {'StockCode': 'ts_code', 'Time': 'trade_time', 'Open': 'open', 'High': 'high', 'Low': 'low',
+                             'Close': 'close', 'Volume': 'vol', 'Amount': 'amount'}}

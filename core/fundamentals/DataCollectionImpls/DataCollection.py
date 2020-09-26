@@ -9,6 +9,7 @@ import sqlite3
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from typing import *
 
 class DataCollection(abc.ABC):
     '''
@@ -18,10 +19,11 @@ class DataCollection(abc.ABC):
     '''
     @classmethod
     @abc.abstractmethod
-    def apidata(cls, StockCode:str, starttime:datetime, endtime:datetime)->pd.DataFrame:
+    def apidata(cls, StockCode:Union[str,list], starttime:datetime, endtime:datetime)->pd.DataFrame:
         '''
         输入标的代码、起止时间，输出行情序列DataFrame;该DataFrame应与基础数据库中的目标表的字段
         相对应（至少主键及目标字段应当对应）
+        可以在此处试图并发下载，优化原生api调用方式
         '''
         return pd.DataFrame()
 
@@ -46,7 +48,7 @@ class DataCollection(abc.ABC):
         开放给外部程序的更新方法,在被调用时自定更新方式(如仅每周更新/手动确认是否更新/etc.)
         1.自检数据判定缺失，从而生成get_data的参数
           (自检模式可在抽象类中写好:行情更新类;固定参数类;(不需要手动参数))
-        2.调用get_data、probe
+        2.调用get_data、probe，适当切割待更新数据,分批入库;这里不要搞并发(在下载时搞并发)
         '''
         pass
 
@@ -71,10 +73,13 @@ class DataCollection(abc.ABC):
                 raise Exception('{}.mapper中没有表 {} 的主键{},无法完成API数据到数据库的映射'.format(cls.__class__.__name__,tablename,node.attrib['name']))
 
         datas = cls.apidata(StockCode, starttime, endtime)
-        datas.to_sql(name='temp_table', con=conn, if_exists='replace')
-        UpdateSql = cls.__SQLgenerate()
-        conn.execute(UpdateSql)
-        conn.commit()
+        if(type(datas) is pd.DataFrame and datas.__len__()>0):
+            datas.to_sql(name='temp_table', con=conn, if_exists='replace')
+            UpdateSql = cls.__SQLgenerate()
+            conn.execute(UpdateSql)
+            conn.commit()
+        else:
+            print("未能在外部api中获取{stock}在{begt}~{endt}区间内的数据,已略过".format(stock=str(StockCode),begt=starttime.strftime("%Y%m%d"),endt=endtime.strftime("%Y%m%d")))
 
     @classmethod
     def __SQLgenerate(cls)->str:

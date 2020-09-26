@@ -24,50 +24,59 @@ def get_feature(descriptor:Union[List[Descriptor],Descriptor],starttime:datetime
     被调用时,检测特征是否支持该频率,若支持则按频率计算返回，若不匹配:若调用频率在支持频率之上(如调用分钟频，支持日频)则计算低频特征，
     再广播至高频,反之则报错。
     '''
-    if(type(stock_name) is not str and type(descriptor) not in Descriptor.__subclasses__()):
-        raise ("目前不支持同时进行多资产多特征查询，请重试")
-    #descriptor = [descriptor] if type(descriptor) in Descriptor.__subclasses__() else descriptor  #get_feature支持多特征查询改造
-    freqList = list(descriptor.calcDescriptor.keys())
-    try:
-        li = freqList.index(freq)
-    except Exception as e:
-        raise("频率freq目前仅支持分钟(min)、日(d)、周(w)、月(m)、永久(fix)，当前输入"+str(freq))
-    realFreq = None
-    for i in range(li,freqList.__len__()):
-        if(descriptor.calcDescriptor[freqList[i]] is not None):
-            realFreq = freqList[i]
-            break
-    if(realFreq is None):
-        raise("特征{descriptor}无所选频率{freq}以下的算法，请剔除该特征或更换频率".format(descriptor=descriptor.descriptorRefName(),freq=freq))
-    if(realFreq == freq):
-        return RecursiveCalc(descriptor, starttime, endtime, stock_name, check)
-    #获取对外输出DataFrame的时间轴
-    ind = api.TradingTimePoints('stock', starttime, endtime, freq).index
-    if(ind.__len__()==0):
-        return pd.DataFrame()
-    timeSpan = pd.DataFrame(index = ind,data={})
-    timeSpan['Time'] = timeSpan.index
-    descriptor.freq = realFreq
-    if(realFreq in ('w','M')):
-        starttime = getFirstDate(starttime,realFreq)
-    fetMat = RecursiveCalc(descriptor, starttime, endtime, stock_name, check)
-    if(realFreq=='d'):
-        timeSpan['freqMatch'] = list(timeSpan.index.strftime('%Y%m%d'))
-        fetMat['freqMatch'] = list(fetMat.index.strftime('%Y%m%d'))
-    elif(realFreq=='w'):
-        timeSpan['freqMatch'] = list(timeSpan.index.strftime('%Y%W'))
-        fetMat['freqMatch'] = list(fetMat.index.strftime('%Y%W'))
-    elif(realFreq=='M'):
-        timeSpan['freqMatch'] = list(timeSpan.index.strftime('%Y%m'))
-        fetMat['freqMatch'] = list(fetMat.index.strftime('%Y%m'))
-    elif(realFreq=='fix'):
-        timeSpan['freqMatch'] = 1
-        fetMat['freqMatch'] = 1
-    ans = timeSpan.merge(fetMat, how='left', on='freqMatch')
-    ans.index = pd.DatetimeIndex(ans['Time'])
-    ans.columns.name = fetMat.columns.name
-    ans = ans.drop(columns=['freqMatch', 'Time'])
-    return ans
+    if(starttime!=endtime and type(descriptor) not in Descriptor.__subclasses__()):
+        raise ("目前get_feature不支持同时进行多时间点多特征查询")
+    descList = [descriptor] if type(descriptor) in Descriptor.__subclasses__() else descriptor
+    ansDict = {}
+    for desc in descList:
+        freqList = list(desc.calcDescriptor.keys())
+        try:
+            li = freqList.index(freq)
+        except Exception as e:
+            raise("频率freq目前仅支持分钟(min)、日(d)、周(w)、月(m)、永久(fix)，当前输入"+str(freq))
+        realFreq = None
+        for i in range(li,freqList.__len__()):
+            if(desc.calcDescriptor[freqList[i]] is not None):
+                realFreq = freqList[i]
+                break
+        if(realFreq is None):
+            raise("特征{desc}无所选频率{freq}以下的算法，请剔除该特征或更换频率".format(desc=desc.descriptorRefName(),freq=freq))
+        ans = pd.DataFrame()
+        if(realFreq == freq):
+            ans = RecursiveCalc(desc, starttime, endtime, stock_name, check)
+        else:
+            #获取对外输出DataFrame的时间轴
+            ind = api.TradingTimePoints('stock', starttime, endtime, freq).index
+            if(ind.__len__()>0):
+                timeSpan = pd.DataFrame(index = ind,data={})
+                timeSpan['Time'] = timeSpan.index
+                desc.freq = realFreq
+                if(realFreq in ('w','M')):
+                    starttime = getFirstDate(starttime,realFreq)
+                fetMat = RecursiveCalc(desc, starttime, endtime, stock_name, check)
+                if(realFreq=='d'):
+                    timeSpan['freqMatch'] = list(timeSpan.index.strftime('%Y%m%d'))
+                    fetMat['freqMatch'] = list(fetMat.index.strftime('%Y%m%d'))
+                elif(realFreq=='w'):
+                    timeSpan['freqMatch'] = list(timeSpan.index.strftime('%Y%W'))
+                    fetMat['freqMatch'] = list(fetMat.index.strftime('%Y%W'))
+                elif(realFreq=='M'):
+                    timeSpan['freqMatch'] = list(timeSpan.index.strftime('%Y%m'))
+                    fetMat['freqMatch'] = list(fetMat.index.strftime('%Y%m'))
+                elif(realFreq=='fix'):
+                    timeSpan['freqMatch'] = 1
+                    fetMat['freqMatch'] = 1
+            ans = timeSpan.merge(fetMat, how='left', on='freqMatch')
+            ans.index = pd.DatetimeIndex(ans['Time'])
+            ans.columns.name = fetMat.columns.name
+            ans = ans.drop(columns=['freqMatch', 'Time'])
+        if(descList.__len__()==1):
+            return ans
+        if(ans.__len__()>0):
+            ansDict[desc.descriptorRefName()] = ans.iloc[0,:]
+    resdf = pd.DataFrame(ansDict)
+    return resdf
+
 
 def RecursiveCalc(descriptor:Descriptor, starttime:datetime, endtime:datetime, stock_name:list=None, check:bool=True)->pd.DataFrame:
     '''

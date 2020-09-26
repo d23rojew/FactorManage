@@ -40,6 +40,17 @@ DBdefinition定义了1、数据库连接信息 2、基础数据表结构。
                 <property text = "总市值(元)" name="TotalMV" type="Numeric" />
                 <property text = "流通市值(元)" name="CircMV" type="Numeric" />
             </table>
+            <!--分钟行情-->
+            <table text = "股票分钟行情" name="StockMarketMinute">
+                <property text = "股票代码" name="StockCode" type="varchar(11)" not-null="true" identifier = "true"/>
+                <property text = "时间" name="Time" type="datetime" not-null="true" identifier = "true"/>
+                <property text = "开盘价" name="Open" type="Numeric" />
+                <property text = "最高价" name="High" type="Numeric" />
+                <property text = "最低价" name="Low" type="Numeric" />
+                <property text = "收盘价" name="Close" type="Numeric" />
+                <property text = "交易量" name="Volume" type="Numeric" />
+                <property text = "交易额(元)" name="Amount" type="Numeric" />
+            </table>
             <!--交易日历-->
             <table text = "交易所开休市" name="TradingDays" frequency="none">
                 <property text = "交易所代码" name="exchange" type="varchar(11)" not-null="true" identifier = "true"/>

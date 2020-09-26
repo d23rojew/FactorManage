@@ -53,17 +53,16 @@ class fundamentalApi:
         :param period:获取的价格区间总长度(period/starttime任填一个)
         :param field:Open/High/Low/Close/TotalMV/...(见DBdefinition.xml)
         :param freq:'min'(分钟)/'day'(日)
-        :param adj:'None'(未复权)/'qfq'(前复权)/'hfq'(后复权)
+        :param adj:None(未复权)/'qfq'(前复权)/'hfq'(后复权)
         :param asset_type:'stock'(股票)/'index'(指数)
         :return:以stock_code\time为主键,其它价格为值域的DataFrame
         '''
         TableFields = ''
-        AssetCodeControl = ''
         AssetCodestr = ''
         if(type(fields)==str):
             fields = [fields]
         if(asset_type not in ('stock','index')):
-            raise("不支持的资产类型"+asset_type+",当前支持资产类型为'stock'或'index'")
+            raise Exception("不支持的资产类型"+asset_type+",当前支持资产类型为'stock'或'index'")
         elif(asset_type == 'stock'):
             CodeFieldName = 'StockCode'
             TableName = 'StockMarketDaily'
@@ -75,9 +74,9 @@ class fundamentalApi:
                 if (adj == 'hfq'):
                     TableFields += ','+fld+'*Adjfactor '+fld
                 elif (adj == 'qfq'):
-                    raise ('行情接口price()暂不支持前复权价格数据!')
+                    raise Exception('行情接口price()暂不支持前复权价格数据!')
                 else:
-                    raise ("行情接口price参数异常:adj输入了未预期到的参数" + str(adj))
+                    raise Exception("行情接口price参数异常:adj输入了未预期到的参数" + str(adj))
             else:
                 TableFields += ' ,'+fld
         if(asset_code is None):
@@ -85,7 +84,7 @@ class fundamentalApi:
         elif(type(asset_code) is str):
             AssetCodeControl =  "and {CodeFieldName} in ('{asset_code}')".format(CodeFieldName=CodeFieldName, asset_code = asset_code)
         elif(type(asset_code) is not list):
-            raise("参数asset_code需为字符串或字符串列表,当前类型为{type}".format(str(type(asset_code))))
+            raise Exception("参数asset_code需为字符串或字符串列表,当前类型为{type}".format(str(type(asset_code))))
         else:
             for code in asset_code:
                 AssetCodestr += ",'" + code + "'"
@@ -112,6 +111,53 @@ class fundamentalApi:
         df.index = pd.DatetimeIndex(df.index.astype(str))
         return df
 
+    __quotes_facilitate_MinuteDict = {}
+    @classmethod
+    def quoteMinute(cls, asset_code:str, starttime:datetime, endtime:datetime, period:int=None, fields:Union[str,List[str]]=['Open'])->pd.DataFrame:
+        '''
+        获取分钟价格序列数据
+        :param asset_code:股票代码(股票代码列表)
+        :param starttime:开始时间(period/starttime任填一个)
+        :param endtime:结束时间
+        :param period:获取的价格区间总长度(period/starttime任填一个)
+        :param field:Open/High/Low/Close/Volume/Amount(见DBdefinition.xml)
+        :param adj:'None'(未复权)/'qfq'(前复权)/'hfq'(后复权)
+        :return:以stock_code\time为主键,其它价格为值域的DataFrame
+        '''
+        TableFields = ''
+        AssetCodestr = ''
+        if(type(fields)==str):
+            fields = [fields]
+        for fld in fields:
+            TableFields += ' ,'+fld
+        if(asset_code is None):
+            AssetCodeControl = ""
+        elif(type(asset_code) is str):
+            AssetCodeControl =  "and StockCode in ('{asset_code}')".format(asset_code = asset_code)
+        elif(type(asset_code) is not list):
+            raise Exception("参数asset_code需为字符串或字符串列表,当前类型为{type}".format(str(type(asset_code))))
+        else:
+            for code in asset_code:
+                AssetCodestr += ",'" + code + "'"
+            AssetCodestr = AssetCodestr.strip(',')
+            AssetCodeControl = "and StockCode in ({AssetCodestr})".format(AssetCodestr = AssetCodestr)
+        endTimestr = endtime.strftime("%Y-%m-%d %H:%M:%S")
+        if(starttime is None and period is not None):
+            startTimestr = cls.__quotes_facilitate_MinuteDict.get((endTimestr,period))
+            if(startTimestr is None):
+                df_minutes = cls.TradingTimePoints(asset_code=None,starttime=datetime.strptime('20100101','%Y%m%d'),endtime=endtime,freq='min')
+                startIndex = 0 if df_minutes.__len__() - period < 0 else df_minutes.__len__() - period
+                startTimestr = str(df_minutes.index[startIndex])
+                cls.__quotes_facilitate_MinuteDict[(endTimestr,period)] = startTimestr
+        else:
+            startTimestr = starttime.strftime("%Y-%m-%d %H:%M:%S")
+        sqlstr = "select Time,StockCode {TableFields} from StockMarketMinute where Time>='{starttime}' and Time<='{endtime}' {AssetCodeControl} order by StockCode asc,Time desc "\
+            .format(AssetCodeControl=AssetCodeControl, TableFields=TableFields,starttime=startTimestr,endtime=endTimestr)
+        df = pd.read_sql_query(sqlstr,cls.conn,index_col='Time')
+        df.replace(to_replace=[None],value=np.nan,inplace=True)
+        df.index = pd.DatetimeIndex(df.index.astype(str))
+        return df
+
     @classmethod
     def getReturn(cls, asset_code:str, starttime:datetime, endtime:datetime, forcast_period:int,freq:str = 'd',asset_type:str = 'stock'):
         '''
@@ -133,6 +179,9 @@ class fundamentalApi:
         return returnMat
 
     Tdate = {freq: df_tradingdate.resample(freq, convention='start').first()['date'].dropna() for freq in ['d', 'w', 'm']}
+    timepoint = Tdate['d'].asfreq('min')
+    Tminute = timepoint[((timepoint.index.strftime('%H%M') >= '0931') & (timepoint.index.strftime('%H%M') <= '1130'))
+                        |((timepoint.index.strftime('%H%M') >= '1301') & (timepoint.index.strftime('%H%M') <= '1500'))]
     @classmethod
     def TradingTimePoints(cls,asset_code:str,starttime:datetime,endtime:datetime,freq:str) -> pd.DataFrame:
         '''
@@ -148,14 +197,8 @@ class fundamentalApi:
             dates = cls.Tdate[freq]
             return dates[(dates >= starttime.strftime('%Y%m%d')) & (dates <= endtime.strftime('%Y%m%d'))]
         if(freq == 'min'):
-            dates = cls.Tdate['d']
-            keydate = dates[(dates >= starttime.strftime('%Y%m%d')) & (dates <= (endtime+timedelta(days=20)).strftime('%Y%m%d'))]
-            timepoint = keydate.asfreq('min')
-            tradingTimepoint = timepoint[(starttime<=timepoint.index) & (endtime>=timepoint.index)
-                                         & (((timepoint.index.strftime('%H%M') >= '0930') & (timepoint.index.strftime('%H%M') <= '1130'))
-                                            | ((timepoint.index.strftime('%H%M') >= '1300') & (timepoint.index.strftime('%H%M') <= '1500')))]
+            tradingTimepoint = cls.Tminute[(starttime<=cls.Tminute.index) & (endtime>=cls.Tminute.index)]
             return tradingTimepoint
-
 
     @classmethod
     def stockinfo(cls, exchange:list=None, list_status:list=None)->pd.DataFrame:

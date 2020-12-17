@@ -302,3 +302,38 @@ Markowitz权重增量优化器
 -->已在cvxpy中表达出组合优化问题。求解发现问题:
         -->cvxpy提示目标函数不符合DCP;
         -->简化目标函数，提示向量过长溢出。
+        -->已获得mosek的学术licence，待试用;
+           已自编贪心法组合优化器。              --2020-10-07
+
+-->让multiFactor、portfolioOptimizor、OrderExecutor兼容：
+    -->确定接口:
+            multiFactor:forcaststkreturn方法需包括现金代码"cash";
+                        增加forcaststkcov方法;
+            portfolioOptimizor:
+                       产出项为{'orderbook':orderbook      --orderbook:字典{stkcode:buyamt(股数)}
+                                ,'position':after_adj_hold  --after_adj_hold:字典{stkcode:holdamt(股数)}
+                                ,'expRet':expRet  --expRet:数值
+                                ,'expVar':expVar  --expVar:数值
+                                ,'expStockRet':expStockRet}  --字典{stkcode:return}
+                                (orderbook,after_adj_hold,expStockRet)均包括现金代码cash
+            OrderExecutor:
+                        检测getBaseFromDB、makeOptimizeOrder是否可在以上两者的条件下顺利执行.
+
+
+-->使用easytrader连接银河证券客户端实现自动化下单、平仓。
+
+-->开发一个可盈利多因子定价模型，每日输出仓位指令。
+
+研发流程:
+1、对于研报、论文中提取出的新因子算法，
+
+运维流程:
+
+-->增加目标仓位、实际完成仓位
+模型优化的base为【实际完成仓位+送股赠股调整后的股票数】
+模型表现归因:期望收益-实际收益 =  期望下单量*期望收益 - 实际下单量*实际收益
+                             =  期望下单量*（期望收益-实际收益）  -->收益预测偏差
+                               +期望收益*（期望下单量-实际下单量） -->订单执行偏差
+                               - (期望下单量-实际下单量)(期望收益-实际收益)  -->高阶小量
+
+

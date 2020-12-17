@@ -71,7 +71,7 @@ def reconstruct(DBdefinitionXML:ET.ElementTree,conn:sqlite3.Connection):
 
 
 if (__name__ == "__main__"):
-    Domtree = ET.parse('../resource/DBdefinition.xml')
+    Domtree = ET.parse('../MyResource/DBdefinition.xml')
     conn = sqlite3.connect('testdb')
     reconstruct(Domtree, conn)
     # from core.fundamentals.DataCollectionImpls.UpdateData import *

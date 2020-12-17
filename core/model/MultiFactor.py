@@ -49,24 +49,27 @@
 暂时不去考虑
 '''
 from datetime import datetime
+import copy
 from core.fundamentals.getfundamentals import fundamentalApi as fapi
 from core.features.DescriptorImpls import *
 from core.features.getfeature import get_feature
 import xarray as xr
 import statsmodels.api as sm
+import gzip
 import pickle
 import sqlite3
 from tqdm import tqdm
 from typing import List,Union
-
+import os
+dbPath = os.path.dirname(os.path.dirname(__file__)) + '\\fundamentals\\testdb'
 class MultiFactor:
-    conn = sqlite3.connect('../fundamentals/testdb')
+    conn = sqlite3.connect(dbPath)
     def __init__(self,factors:List[Descriptor],starttime:datetime,endtime:datetime,forcast_period:int,controls:list,freq:str='d'):
         '''
         :param factors: 参与建模的因子列表，类型:list<Descriptor>
         :param starttime: 建模开始时间
         :param endtime: 建模结束时间
-        :param forcast_period: 模型预测期(形如'1d'/'2w')
+        :param forcast_period 模型预测期(天)
         :param controls: 控制因子列表，类型:list<Descriptor>，个股在该时间点控制因子值为0则该条数据不参与横截面回归
         '''
         #记录模型参数
@@ -75,33 +78,39 @@ class MultiFactor:
         self.forcast_period = forcast_period           #预测期
         self.controls = controls                       #控制因子
         self.freq = freq                               #时间频率
+        self.Id = None                                 #模型Id
         self.optimalMAperiod = {x.descriptorRefName():20 for x in factors}   #预测因子收益所用均线周期
         #获得模型日期序列、计算因子收益
-        self.dateIndex,self.rst = self.__getfundamental(self.timespan)
-        #计算因子预期收益
-        self.__factorReturnOptimizer()
+        self.rst = None                                #模型回归结果
+        self.__getRegressResult()   #todo self.rst占用空间巨大(100MB),不应随模型一起存入数据库
 
-    def uptodate(self,endtime:datetime):
+    def uptodate(self,endtime:datetime=datetime.now()):
         '''
-        更新因子收益序列、因子收益序列最优预测移动平均线周期至指定日期
+        更新模型时间区间，并存储模型(因子列表&时间区间)至数据库
         :param endtime:指定的日期
         '''
         if(endtime<=self.timespan[1]):
             raise Exception("所选更新日期{}需大于当前模型已有日期{}!".format(endtime.strftime('%Y%m%d'),self.timespan[1].strftime('%Y%m%d')))
         print("开始更新模型,最新日期{}->{}".format(self.timespan[1].strftime('%Y%m%d'),endtime.strftime('%Y%m%d')))
-        new_dateIndex,new_rst = self.__getfundamental((self.timespan[1],endtime))
-        if(new_dateIndex[0] == self.dateIndex[-1]):
-            new_dateIndex = new_dateIndex[1:]
-            new_rst = new_rst[1:]
-        self.dateIndex = self.dateIndex.append(new_dateIndex)
-        self.rst = self.rst + new_rst
-        self.__factorReturnOptimizer()
-        self.timespan[1] = endtime
-        print("多因子模型更新完毕!")
+        try:
+            self.timespan[1] = endtime
+            self.rst = None
+            self.__getRegressResult()
+            print("多因子模型更新完毕!")
+        except Exception:
+            print("模型更新异常，可能所选更新时间区间无有效因子")
+            pass
+        #更新数据库中模型(但不保存回归结果)
+        lightModel = copy.copy(self)
+        lightModel.rst = None
+        byteObj = gzip.compress(pickle.dumps(lightModel))
+        self.conn.execute("update MultiFactorOptimizor set Model=? where Id=?",
+                          (byteObj, lightModel.Id))
+        self.conn.commit()
 
-    def __getfundamental(self,timespan):
+    def __getRegressResult(self):
         '''
-        计算并返回指定时间段内的交易日、描述子数据、收益数据以及横截面回归结果.
+        计算并在对象内保存指定时间段内的交易日、描述子数据、收益数据以及横截面回归结果.
         :param timespan: 指定的时间段
         :return: (out_dateIndex,out_endogs,out_exogs,out_dateIndex)
             out_dateIndex:时间段内的交易时点序列
@@ -109,10 +118,12 @@ class MultiFactor:
             out_exogs：时间段内的描述子数据
             out_rst:时间段内的横截面回归结果
         '''
-        ReturnMat = fapi.getReturn(asset_code=None,starttime=timespan[0],endtime=timespan[1],forcast_period=self.forcast_period,freq=self.freq,asset_type='stock')
+        if(self.rst is not None):
+            return
+        ReturnMat = fapi.getReturn(asset_code=None,starttime=self.timespan[0],endtime=self.timespan[1],forcast_period=self.forcast_period,freq=self.freq,asset_type='stock')
         #取因子矩阵
-        FactorMatDict = {'feat_'+x.descriptorRefName() : get_feature(descriptor=x,starttime=timespan[0],endtime=timespan[1],freq=self.freq,check=False) for x in self.factors}
-        ControlMatDict = {'ctrl_'+x.descriptorRefName() : get_feature(descriptor=x,starttime=timespan[0],endtime=timespan[1],freq=self.freq,check=False) for x in self.controls}
+        FactorMatDict = {'feat_'+x.descriptorRefName() : get_feature(descriptor=x,starttime=self.timespan[0],endtime=self.timespan[1],freq=self.freq,checkLevel=1) for x in self.factors}
+        ControlMatDict = {'ctrl_'+x.descriptorRefName() : get_feature(descriptor=x,starttime=self.timespan[0],endtime=self.timespan[1],freq=self.freq,checkLevel=1) for x in self.controls}
         #FMB回归
         matchDict = {'return':ReturnMat}
         matchDict.update(FactorMatDict)
@@ -146,7 +157,8 @@ class MultiFactor:
         if(noneCount==l):
             raise Exception("所选时间区间内无有效回归样本，请检查基础数据！")
         out_dateIndex = matchDs['return'].indexes['Time']
-        return (out_dateIndex,out_rst)
+        self.dateIndex,self.rst = (out_dateIndex,out_rst)
+        self.__factorReturnOptimizer()
 
     def __factorReturnOptimizer(self):
         '''
@@ -190,6 +202,7 @@ class MultiFactor:
         :param p_threshold: 筛选出在这段时期内因子受关注时间点/总时间点的比例达到该值以上的因子(因子受关注:因子收益在该时期显著)
         :return:重要因子列表
         '''
+        self.__getRegressResult()
         validCount = 0
         pvaluesCount = np.zeros(self.factors.__len__())
         for i in self.rst:
@@ -206,6 +219,7 @@ class MultiFactor:
         获取因子收益序列
         :return:DataFrame，横轴-因子 纵轴-时间
         '''
+        self.__getRegressResult()
         returnDict = {}
         for i in range(self.factors.__len__()):
             returnI = []
@@ -240,6 +254,7 @@ class MultiFactor:
         获取预期因子收益
         :return:
         '''
+        self.__getRegressResult()
         expFreturn = {}
         for f in self.factors:
             fname = f.descriptorRefName()
@@ -247,31 +262,59 @@ class MultiFactor:
             expFreturn[fname] = np.nanmean(self.Freturns[fname].values[-p:])
         return expFreturn
 
-
-    def save_model(self):
+    def putModelOnShelve(self,optimizor:str='greedy'):
         '''
-        存储模型至数据库(做成pickle对象)
-        字段:唯一编号；当前时间(精确到秒)；模型二进制BLOB
+        上架该模型至优化器列表。
+        父层模型预测期需能被该模型预测期整除,否则无法上架。
+        如果现存子层模型预测期不能整除该模型预测期，则这些子模型都会被下架。
+        如有同预测期模型，则会直接替换。
         '''
-        byteObj = pickle.dumps(self)
         timeStr = datetime.now().strftime('%Y%m%d%H%M%S')
-        sql = "insert into MultiFactorModels values(?,?)".format(
-            Time=timeStr,ModelByte=byteObj)
-        self.conn.execute("insert into MultiFactorModels values(?,?)",(timeStr,byteObj))
+        #获取最新模型Id
+        cursor = self.conn.execute("select max(Id) from MultiFactorOptimizor")
+        rst = cursor.fetchone()
+        if(type(rst) is tuple):
+            self.Id = 0 if rst[0] is None else rst[0]+1
+        else:
+            self.Id=0
+        cursor.close()
+        #根据上层模型判断是否可执行模型保存
+        cursor = self.conn.execute("select ForcastPeriod from MultiFactorOptimizor where ForcastPeriod>{period} and ForcastPeriod%{period}<>0 and IsInService=1".format(period=self.forcast_period));
+        rsts = cursor.fetchall()
+        if(rsts.__len__()>0):
+            print("存在周期不兼容的上层模型，无法加入该子模型！")
+            return
+        cursor.close()
+        #保存模型，同时退役同层级模型和所有无法整除预测期的下层模型
+        updateSql = ("update MultiFactorOptimizor " +
+                     "set IsInService=0 " +
+                     "where IsInService<>0 " +
+                     "and (ForcastPeriod={p} " +
+                     "or (ForcastPeriod<{p} and {p}%ForcastPeriod<>0));").format(p=self.forcast_period)
+        self.conn.execute(updateSql)
+        lightModel = copy.copy(self)
+        lightModel.rst = None
+        byteObj = gzip.compress(pickle.dumps(lightModel))
+        self.conn.execute("insert into MultiFactorOptimizor values(?,?,?,?,?,?,?)"
+                          , (self.Id, self.forcast_period, optimizor, 'None', byteObj, timeStr, 1))
         self.conn.commit()
 
     @classmethod
-    def load_model(cls):
+    def load_model(cls,forcast_period:int=-1 ,Id:int = -1):
         '''
-        从数据库读取最近一次存储的模型
+        从数据库读取最近一次存储的模型。
+        :param forcast_period: 根据预测期找模型
+        :param Id: 模型Id 根据Id找模型
         :return:最近一次存储的多因子模型对象,为MultiFactor
         '''
-        cursor = cls.conn.execute("select model from MultiFactorModels where Time = (select max(Time) from MultiFactorModels)")
+        if(forcast_period>0 and Id>0):
+            raise Exception("参数forcast_period、Id仅可输入其一")
+        cursor = cls.conn.execute("select model from MultiFactorOptimizor where Id = ? or (ForcastPeriod = ? and IsInService <> 0) order by CreDtTm desc",(Id,forcast_period))
         rst = cursor.fetchone()
-        if(type(rst) is tuple):
-            return pickle.loads(rst[0])
+        if(rst[0] is not None):
+            return pickle.loads(gzip.decompress(rst[0]))
         else:
-            print("库内暂未存储多因子模型")
+            print("库内暂无要求的多因子模型")
             return None
 
     def report(self):
@@ -282,22 +325,30 @@ class MultiFactor:
 
         pass
 
-    def forcastStkReturn(self):
+    def forcastStkReturn(self,check=True)->pd.DataFrame:
         '''
         给出下一期股票收益的预测
+        :param check: bool 是否检查更新特征数据
         :return:dataframe,纵轴:股票，横轴:e_ret,各因子暴露收益
         '''
         nextDate = fapi.TradingTimePoints(asset_code=None, starttime=self.timespan[1] + timedelta(days=1),
                                endtime=self.timespan[1] + timedelta(days=10), freq=self.freq).index[0].to_pydatetime()
-        FactorMatDict = {x.descriptorRefName() : get_feature(descriptor=x,starttime=nextDate,endtime=nextDate,freq=self.freq,check=True) for x in self.factors}
+        FactorMatDict = {x.descriptorRefName() : get_feature(descriptor=x,starttime=nextDate,endtime=nextDate,freq=self.freq,checkLevel=2 if check else 0) for x in self.factors}
         matchDs = xr.Dataset(FactorMatDict)
         CalibratedFeats = {fename:matchDs[fename].values.flatten() for fename in matchDs}
         stocks = matchDs.indexes['StockCode']
         df_factorLoading = pd.DataFrame(index=stocks,data=CalibratedFeats)
         expFreturnLi = [self.expFreturn[f.descriptorRefName()] for f in self.factors]
-        df_ForcastReturns = df_factorLoading.mul(expFreturnLi, axis=1)
+        df_ForcastReturns:pd.DataFrame = df_factorLoading.mul(expFreturnLi, axis=1)
         df_ForcastReturns['e_ret'] = df_ForcastReturns.sum(axis = 1)
-        return df_ForcastReturns
+        cashdict = {i:0 for i in list(df_ForcastReturns.columns)}
+        cash = pd.DataFrame(cashdict,
+                           index=['cash'])
+        aa = df_ForcastReturns.append(cash)
+        return aa
+
+    def forcastStkCov(self):
+        return None
 
     def bestPortfolio(self,Rf)->pd.Series:
         '''

@@ -10,7 +10,9 @@ from datetime import datetime,timedelta
 from dateutil.parser import parse
 from time import time
 from typing import Union,List
+import os
 
+dbPath = os.path.dirname(__file__) + '\\testdb'
 def outertrade_cal(conn:sqlite3.Connection, exchange: str, startdate: str, enddate: str, is_open: str = None) -> pd.DataFrame:
     '''
     取交易日
@@ -23,15 +25,15 @@ def outertrade_cal(conn:sqlite3.Connection, exchange: str, startdate: str, endda
     df = pd.read_sql_query(sqlstr, conn)
     return df
 
-df_tradingdate = outertrade_cal(sqlite3.Connection('testdb'),exchange='SSE', startdate='19000101', enddate='21000101', is_open='1')
+df_tradingdate = outertrade_cal(sqlite3.Connection(dbPath),exchange='SSE', startdate='19000101', enddate='21000101', is_open='1')
 df_tradingdate['dateIndex'] = pd.to_datetime(df_tradingdate['date'], format='%Y%m%d')
 df_tradingdate.set_index('dateIndex', inplace=True)
 df_tradingdate.index = pd.DatetimeIndex(df_tradingdate.index)
 
 class fundamentalApi:
-    conn = sqlite3.Connection('testdb')
+    conn = sqlite3.Connection(dbPath)
     @classmethod
-    def trade_cal(cls,exchange:str,startdate:str,enddate:str,is_open:str=None)->pd.DataFrame:
+    def trade_cal(cls,exchange:str,startdate:str,enddate:str,is_open:str='1')->pd.DataFrame:
         '''
         获取交易日
         :param exchange: 'SSE' 上交所, 'SZSE' 深交所, 'CFFEX' 中金所 ,'SHFE' 上期所 ,'CZCE' 郑商所 ,'DCE' 大商所,'INE' 上能源 ,'IB' 银行间 ,'XHKG' 港交所
@@ -41,6 +43,23 @@ class fundamentalApi:
         :return: DataFrame,cols:exchange,date,is_open
         '''
         return outertrade_cal(cls.conn, exchange, startdate, enddate, is_open)
+
+    classmethod
+    def get_trade_date(cls,baseDate:str,shift:int)->str:
+        '''
+        用给定日期以及偏离日计算交易日
+        :param baseDate: 制定日期
+        :param shift: 偏离日
+        :return: 交易日'yyyymmdd'
+        '''
+        dateSeries = df_tradingdate['date']
+        seq = (dateSeries[dateSeries <= baseDate]).__len__() - 1 + shift
+        datelist = list(dateSeries)
+        if (seq <= 0):
+            seq = 0
+        if (seq >= datelist.__len__()-1):
+            seq = datelist.__len__()-1
+        return datelist[seq]
 
     __quotes_facilitate_dateDict = {}
     @classmethod
@@ -92,16 +111,7 @@ class fundamentalApi:
             AssetCodeControl = "and {CodeFieldName} in ({AssetCodestr})".format(CodeFieldName=CodeFieldName, AssetCodestr = AssetCodestr)
         endTimestr = endtime.strftime("%Y%m%d")
         if(starttime is None and period is not None):
-            startTimestr = cls.__quotes_facilitate_dateDict.get((endTimestr,period))
-            if(startTimestr is None):
-                df_tradingdate = cls.trade_cal(exchange='SSE', startdate='19000101', enddate=endTimestr, is_open='1')
-                datelist = list(df_tradingdate['date'])
-                if(datelist.__len__()==0):
-                    startTimestr = endTimestr
-                else:
-                    startIndex = 0 if datelist.__len__()-period<0 else datelist.__len__()-period
-                    startTimestr = datelist[startIndex]
-                cls.__quotes_facilitate_dateDict[(endTimestr,period)] = startTimestr
+            startTimestr = cls.get_trade_date(cls,endTimestr,-period+1)
         else:
             startTimestr = starttime.strftime("%Y%m%d")
         sqlstr = "select Time,{CodeFieldName} {TableFields} from {TableName} where Time>='{starttime}' and Time<='{endtime}' {AssetCodeControl} order by {CodeFieldName} asc,Time desc "\
@@ -169,19 +179,31 @@ class fundamentalApi:
         :param freq: 频率'min'/'d'/'w'/'m'
         :return:dataframe，横轴为资产，纵轴为时间
         '''
-        priceInfo = cls.quotes(asset_code,starttime,endtime,period=None,fields=['Open','High','Low','Close'],freq=freq,adj='hfq',asset_type=asset_type)
+        if(freq=='d'):
+            endtimestr = endtime.strftime('%Y%m%d')
+            quoteendtimestr = cls.get_trade_date(cls,endtimestr,forcast_period-1)
+            quoteendtime = datetime.strptime(quoteendtimestr,'%Y%m%d')
+        priceInfo = cls.quotes(asset_code,starttime,quoteendtime,period=None,fields=['Open','High','Low','Close'],freq=freq,adj='hfq',asset_type=asset_type)
         filtSeries = (priceInfo['Open']==priceInfo['High']).astype(bool) &(priceInfo['Open']==priceInfo['Low']).astype(bool) &(priceInfo['Open']==priceInfo['Close']).astype(bool)
         priceInfo.loc[filtSeries,'Open'] = np.nan  #在开仓时必须为正常行情，否则剔出样本
         panels = priceInfo.pivot(columns='StockCode',values=['Open','Close'])
         if(panels.__len__()==0):
             return pd.DataFrame()
         returnMat = panels['Close'].shift(1-forcast_period)/panels['Open'] - 1
-        return returnMat
+        return returnMat[0:returnMat.__len__()-forcast_period+1]
 
     Tdate = {freq: df_tradingdate.resample(freq, convention='start').first()['date'].dropna() for freq in ['d', 'w', 'm']}
     timepoint = Tdate['d'].asfreq('min')
-    Tminute = timepoint[((timepoint.index.strftime('%H%M') >= '0931') & (timepoint.index.strftime('%H%M') <= '1130'))
-                        |((timepoint.index.strftime('%H%M') >= '1301') & (timepoint.index.strftime('%H%M') <= '1500'))]
+    t1 = time()
+    Tminute = None
+    @classmethod
+    def __preGetminute(cls):
+        if(cls.Tminute is None):
+            tmin = cls.timepoint.index.strftime('%H%M')
+            cls.Tminute = cls.timepoint[((tmin >= '0931') & (tmin <= '1130'))
+                                |((tmin >= '1301') & (tmin <= '1500'))]
+        return cls.Tminute
+
     @classmethod
     def TradingTimePoints(cls,asset_code:str,starttime:datetime,endtime:datetime,freq:str) -> pd.DataFrame:
         '''
@@ -197,7 +219,8 @@ class fundamentalApi:
             dates = cls.Tdate[freq]
             return dates[(dates >= starttime.strftime('%Y%m%d')) & (dates <= endtime.strftime('%Y%m%d'))]
         if(freq == 'min'):
-            tradingTimepoint = cls.Tminute[(starttime<=cls.Tminute.index) & (endtime>=cls.Tminute.index)]
+            Tminute = cls.__preGetminute()
+            tradingTimepoint = Tminute[(starttime<=cls.Tminute.index) & (endtime>=cls.Tminute.index)]
             return tradingTimepoint
 
     @classmethod

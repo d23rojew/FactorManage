@@ -1,12 +1,12 @@
 '''
 定时任务:
-每日:
+每日日终:
     1、增量(非自检模式)刷新行情数据
-    2、刷新在用日模型因子数据
-    3、根据上层模型权重&上层模型权重->当日时间，计算上层权重行情变化后权(w_base权重)
-    4、根据在用日模型、base权重，计算最优调仓权重w_adj
-    5、将w_base+w_adj目标权重交予交易引擎
-    6、记录本次调仓向量w_adj,根据上个周期调仓向量计算已实现收益w_adj_(t-1)*r_d_(t-1)并记录。
+    2、获取模型栈中本日激活模型清单，更新清单中模型的因子数据
+    3、更新清单中的因子模型
+    4、调用modelAssembler,综合模型周期及数据库的仓位记录，得出最新持仓目标、模型应结仓位并记录入库
+每日日初：
+    5、调用DecisionMaker，从数据库中获取最新持仓目标，与账户实际数据对比后下单(同时反馈开仓情况、平仓情况入库)
        ----------------
        多周期模型的嵌套调仓:
        ----------------
@@ -39,3 +39,26 @@
                 feerate*|w_adj_new_l3+w_adj_new_l2+w_adj_new_l1-w_adj_old_l1-w_adj_old_l2-w_adj_old_l3|
             将该手续费节省全部归属给上个父周期模型。
 '''
+#可以开始写每日日程代码了
+#备好后进行单元测试
+
+import core.fundamentals.DataCollectionImpls.UpdateData as upd
+from core.fundamentals.getfundamentals import fundamentalApi as fApi
+from datetime import datetime
+from core.model.ModelAssembler import DecisionMaker
+from core.model.MultiFactor import MultiFactor
+#刷新行情数据
+# ----------------------------
+# upd.renewTradingDays(fApi.conn)
+# trade_date = fApi.trade_cal('SSE', datetime.now().strftime('%Y%m%d'), datetime.now().strftime('%Y%m%d'), '1')
+# checkAll = trade_date.__len__()<0 #今日是否为休息日
+# upd.renewall(fApi.conn,checkAll) #休息日更新时自检，交易日更新时仅更新当天数据，不自检
+#更新模型并入库
+ModelList = [x[1] for x in DecisionMaker.getActiveModelStackFromDB()]
+for model in ModelList:
+    model:MultiFactor
+    model.uptodate()
+#使用模型下预置指令
+DecisionMaker.makeOptimizeOrder()
+#次日开盘，使用模型下单并记录结果
+DecisionMaker.fire()

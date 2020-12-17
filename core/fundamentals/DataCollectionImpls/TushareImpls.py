@@ -29,7 +29,7 @@ class CollectTradingDay(DataCollection):
                     ]
 
     @classmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAll:bool=True):
         print('正在从tushare更新交易日历...')
         try:
             cls.get_data(StockCode=None,starttime=datetime.now()-timedelta(weeks=520),endtime=datetime.now()+timedelta(weeks=52),conn=conn)
@@ -85,8 +85,9 @@ class CollectStockDailyPrice(DataCollection):
         return price_df
 
     @classmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAll:bool=True):
         trade_date = fapi.trade_cal('SSE', '20100101', datetime.now().strftime('%Y%m%d'),'1')
+        trade_date = trade_date if checkAll else trade_date.tail(1)
         MissingDates = [];
         lastDate = trade_date["date"].tolist()[-1]
         beginDate, endDate = None, None
@@ -141,8 +142,9 @@ class CollectAdjFactor(DataCollection):
         return adjfactor_df
 
     @classmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAll:bool=True):
         trade_date = fapi.trade_cal('SSE', '20100101', datetime.now().strftime('%Y%m%d'),'1')
+        trade_date = trade_date if checkAll else trade_date.tail(1)
         lastDate = trade_date["date"].tolist()[-1]
         trade_date.rename(columns = {'date':'trade_date'},inplace=True)
         print('正在自检复权因子...')
@@ -225,8 +227,9 @@ class CollectDailyBasics(DataCollection):
         return daily_basic
 
     @classmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAll:bool=True):
         trade_date = fapi.trade_cal('SSE', '20100101', datetime.now().strftime('%Y%m%d'),'1')
+        trade_date = trade_date if checkAll else trade_date.tail(1)
         lastDate = trade_date["date"].tolist()[-1]
         trade_date.rename(columns = {'date':'trade_date'},inplace=True)
         print('正在自检股票每日基本面指标...')
@@ -289,7 +292,7 @@ class CollectStockBasics(DataCollection):
         return daily_basic
 
     @classmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAll:bool=True):
         print('正在更新股票基本信息...')
         cls.get_data(None,None,None,conn)
         print('股票基本信息更新完毕！')
@@ -329,7 +332,7 @@ class CollectHS300Daily(DataCollection):
         return df
 
     @classmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAll:bool=True):
         cls.get_data('399300.SZ',None,None,conn)
         print('沪深300行情更新完毕！')
     mapper = {'IndexMarketDaily':{'IndexCode':'ts_code','Time':'trade_date','Open':'open','High':'high','Low':'low','Close':'close','Volume':'vol','Amount':'amount'}}
@@ -403,10 +406,11 @@ class CollectStockMinute(DataCollection):
         return res
 
     @classmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAll:bool=True):
         stocks = fapi.stockinfo()
         today = datetime.now().strftime('%Y%m%d')
         DF_dates = fapi.trade_cal('SSE','20100101',today,'1')['date']
+        DF_dates = DF_dates if checkAll else DF_dates.tail(1)
         MissingDates = [];
         for stockcode,field in tqdm(list(stocks.iterrows()),desc="正在自检分钟行情...",ncols=90):
             begin_date = field['list_date']

@@ -38,12 +38,12 @@ class DataCollection(abc.ABC):
         pass
 
     #获取表结构
-    __Domtree = ET.parse('../resource/DBdefinition.xml')
+    __Domtree = ET.parse('./MyResource/DBdefinition.xml')
     root = __Domtree.getroot()
 
     @classmethod
     @abc.abstractmethod
-    def renew(cls,conn:sqlite3.Connection):
+    def renew(cls,conn:sqlite3.Connection,checkAlll:bool=False):
         '''
         开放给外部程序的更新方法,在被调用时自定更新方式(如仅每周更新/手动确认是否更新/etc.)
         1.自检数据判定缺失，从而生成get_data的参数

@@ -116,10 +116,48 @@ DBdefinition定义了1、数据库连接信息 2、基础数据表结构。
         <!--模型信息-->
         <ModelInfo>
             <!--多因子模型-->
-            <table text = "股票多因子模型" name = "MultiFactorModels">
-                <property text = "生成时间" name="Time" type="datetime" not-null="true" identifier = "true"/>
-                <property text = "模型" name="model" type="BLOB" not-null="true" identifier = "false"/>
+            <table text = "股票多因子模型组合优化器" name = "MultiFactorOptimizor">
+                <property text = "模型Id" name="Id" type="numeric" not-null="true" identifier = "true"/>
+                <property text = "预测时间(天)" name="ForcastPeriod" type="numeric" not-null="true" identifier = "false"/>
+                <!--优化方式:贪心法greedy/最优化风险调整后收益markowitz-->
+                <property text = "优化方式" name="Optimizor" type="varchar(500)" not-null="true" identifier = "false"/>
+                <!--待选股票池-->
+                <property text = "股票范围" name="Scope" type="varchar(500)" not-null="false" identifier = "false"/>
+                <!--定价模型(python对象)-->
+                <property text = "因子模型" name="Model" type="BLOB" not-null="true" identifier = "false"/>
+                <property text = "上线时间" name="CreDtTm" type="datetime" not-null="true" identifier = "false"/>
+                <!--是否仍在服务，1-是 0-否-->
+                <property text = "是否在役" name="IsInService" type="varchar(1)" not-null="true" identifier = "false"/>
             </table>
+            <!--调仓表-->
+            <table text = "调仓表" name = "OrderBook">
+                <!--该表薄记各层级模型调仓决策-->
+                <property text = "模型Id" name="Id" type="numeric" not-null="true" identifier = "true"/>
+                <property text = "调整日" name="AdjDt" type="varchar(8)" not-null="true" identifier = "true"/>
+                <property text = "预期损益(元)" name="exp_ret" type="numeric" not-null="true" identifier = "false"/>
+                <property text = "实现损益(元)" name="real_ret" type="numeric" not-null="false" identifier = "false"/>
+                <property text = "是否关闭,0-否 1-已关闭" name="IsClosed" type="varchar(1)" not-null="true" identifier = "false"/>
+            </table>
+            <!--调仓明细表-->
+            <table text = "调仓明细表" name = "OrderBookDetail">
+                <!--该表薄记各层级模型调仓决策-->
+                <!--该表的行有三种状态：
+                1.完成态：所有字段都有值，表示该指令完成开仓、平仓
+                2.待开态：post_position/open_price/real_ret为空，表示昨天模型已下达指令，但未实际开仓
+                3.待平态：real_ret为空，表示指令已开仓，但模型未到换仓日该仓位未平。
+                -->
+                <property text = "模型Id" name="Id" type="numeric" not-null="true" identifier = "true"/>
+                <property text = "调整日" name="AdjDt" type="varchar(8)" not-null="true" identifier = "true"/>
+                <property text = "股票代码" name="stockcode" type="varchar(10)" not-null="true" identifier = "true"/>
+                <property text = "调整前实际持仓量" name="fore_position" type="numeric" not-null="true" identifier = "false"/>
+                <property text = "计划调整量" name="adj_amount_plan" type="numeric" not-null="true" identifier = "false"/>
+                <property text = "计划调整后持仓量" name="post_position_plan" type="numeric" not-null="true" identifier = "false"/>
+                <property text = "调整后实际持仓量(建仓成交反馈)" name="post_position" type="numeric" not-null="false" identifier = "false"/>
+                <property text = "建仓价格(建仓成交反馈)" name="open_price" type="numeric" not-null="false" identifier = "false"/>
+                <property text = "预期收益率" name="exp_ret" type="numeric" not-null="true" identifier = "false"/>
+                <property text = "实现收益率(平仓成交反馈)" name="real_ret" type="numeric" not-null="false" identifier = "false"/>
+            </table>
+
         </ModelInfo>
     </tables>
 </DBdefinition>

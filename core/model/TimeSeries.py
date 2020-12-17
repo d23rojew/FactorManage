@@ -31,7 +31,7 @@ class TSmodel:
         ReturnSeries = fapi.getReturn(asset_code=asset_code,starttime=starttime, endtime=endtime,forcast_period=forcast_period,freq=freq)
         for factor in factors:
             factor.freq = freq
-            feSeries = get_feature(factor,starttime, endtime,asset_code,True)
+            feSeries = get_feature(factor,starttime, endtime,asset_code,1)
 
 
     def fit(self,starttime:datetime,endtime:datetime):

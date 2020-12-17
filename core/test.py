@@ -14,7 +14,7 @@
 # dctest.get_data(None,None,None,conn)
 
 # 测试datacheck
-# Domtree = ET.parse('../resource/DBdefinition.xml')
+# Domtree = ET.parse('../MyResource/DBdefinition.xml')
 # conn = sqlite3.connect('testdb')
 # from core.fundamentals.DataCollectionImpls.TushareImpls import *
 # CollectHS300Daily.renew(conn)
@@ -128,26 +128,26 @@
 #     t6 = time.time()
 #     print(t6-t5)
 #测试multifactor
-# if(__name__=='__main__'):
-#     from core.model.MultiFactor import MultiFactor
-#     from datetime import datetime
-#     from core.features.DescriptorImpls import *
-#     f1 = Beta(params={'period':100,'index':'399300.SZ'} ,freq='d',prepareProc=['winsor','std'])
-#     f2 = Size(freq='d',prepareProc=['winsor','ln','std'],params={'comment':'logtest'})
-#     f3 = BTOP(freq='d', prepareProc=['winsor','std'])
-#     f4 = CapitalGainOverhang(params={'N':201}, freq='d',prepareProc=['winsor','std'])
-#     f5 = Illiq(freq='d', prepareProc=['winsor','std'], params={'N': 90})
-#     f6 = PastReturn(freq='d', prepareProc=['winsor','std'], params={'wait':0,'cum':5})
-#     newModel = MultiFactor(factors=[f1,f2,f3,f4,f5,f6],
-#                            starttime=datetime.strptime('20191001','%Y%m%d'),
-#                            endtime=datetime.strptime('20200113','%Y%m%d'),
-#                            forcast_period=1,
-#                            controls = [], freq='d')
-#     newModel.uptodate(datetime.strptime('20200115','%Y%m%d'))
-#     newModel.save_model()
-#     fret = newModel.Freturns
-#     forcast = newModel.forcastStkReturn
-#     print(forcast)
+if(__name__=='__main__'):
+    from core.model.MultiFactor import MultiFactor
+    from datetime import datetime
+    from core.features.DescriptorImpls import *
+    f1 = Beta(params={'period':100,'index':'399300.SZ'} ,freq='d',prepareProc=['winsor','std'])
+    f2 = Size(freq='d',prepareProc=['winsor','ln','std'],params={'comment':'logtest'})
+    f3 = BTOP(freq='d', prepareProc=['winsor','std'])
+    f4 = CapitalGainOverhang(params={'N':201}, freq='d',prepareProc=['winsor','std'])
+    f5 = Illiq(freq='d', prepareProc=['winsor','std'], params={'N': 90})
+    f6 = PastReturn(freq='d', prepareProc=['winsor','std'], params={'wait':0,'cum':5})
+    newModel = MultiFactor(factors=[f1,f2,f3,f4,f5,f6],
+                           starttime=datetime.strptime('20191001','%Y%m%d'),
+                           endtime=datetime.strptime('20200513','%Y%m%d'),
+                           forcast_period=1,
+                           controls = [], freq='d')
+    newModel.uptodate(datetime.strptime('20201206','%Y%m%d'))
+    newModel.putModelOnShelve()
+    fret = newModel.Freturns
+    forcast = newModel.forcastStkReturn()
+    print(forcast)
 
 #测试multifactor.forcastStkReturn
 # if(__name__=='__main__'):
@@ -308,12 +308,13 @@
 #     f6 = PastReturn(freq='d', prepareProc=['winsor','std'], params={'wait':0,'cum':5})
 #     [get_feature(descriptor=f,
 #                 starttime=datetime.strptime('20191001', '%Y%m%d'),
-#                 endtime=datetime.strptime('20200113', '%Y%m%d'), check=True) for f in [f1,f2,f3,f4,f5,f6]]
-#     newModel = MultiFactor(factors=[f1,f2,f3,f4,f5,f6],
+#                 endtime=datetime.strptime('20200113', '%Y%m%d'), check=True) for f in [f1,f2]]
+#     newModel = MultiFactor(factors=[f1,f2],
 #                            starttime=datetime.strptime('20191001','%Y%m%d'),
 #                            endtime=datetime.strptime('20200113','%Y%m%d'),
-#                            forcast_period=1,
+#                            forcast_period=4,
 #                            controls = [], freq='d')
+#     #有什么因子在交易日一直是null，需排查
 #     newModel.uptodate(datetime.strptime('20200115','%Y%m%d'))
 #     newModel.save_model()
 #     print(1)
@@ -330,38 +331,83 @@
 # print("optimal value with ECOS_BB:", prob.value)
 
 #测试markowitz组合优化器
-from core.features.DescriptorImpls import *
-from core.model.Markowitz import *
-from core.model.MultiFactor import MultiFactor as mf
-from core.features.DescriptorImpls import *
-from core.features.getfeature import get_feature
-from core.fundamentals.getfundamentals import fundamentalApi as fapi
-oldmo = mf.load_model()
-print('model loaded')
-stk_feature = get_feature(oldmo.factors
-                          ,starttime=datetime.strptime('20200113', '%Y%m%d')
-                          ,endtime=datetime.strptime('20200113', '%Y%m%d')
-                          ,freq = 'd'
-                          ,check = False)
-print('done load feature')
-stk_price = fapi.quotes(asset_code=None
-                                  ,starttime=None
-                                  ,endtime=datetime.strptime('20200113', '%Y%m%d')
-                                  ,period=1
-                                  ,fields = 'Close'
-                                  ,freq='day'
-                                  ,adj = None)
-print('done get price')
-stk_price.set_index(stk_price['StockCode'],inplace=True)
-stk_hold = pd.Series(index = stk_price.index
-                     ,data =np.floor(np.random.rand(stk_price.__len__())*1000)+100)
-f_return = pd.Series(oldmo.expFreturn)
-f_cov = oldmo.FreturnCov
-print('done get cov and feature return')
-Markowitz(stk_feature=stk_feature
-          ,stk_price=stk_price['Close']
-          ,stk_hold =stk_hold
-          ,f_return = f_return
-          ,f_cov = f_cov
-          ,feeRate = 0.003
-          ,totalNV=100000000)
+# from core.features.DescriptorImpls import *
+# from core.model.portfolioOptimizor import *
+# from core.model.MultiFactor import MultiFactor as mf
+# from core.features.DescriptorImpls import *
+# from core.features.getfeature import get_feature
+# from core.fundamentals.getfundamentals import fundamentalApi as fapi
+# oldmo = mf.load_model()
+# print('model loaded')
+# stk_feature = get_feature(oldmo.factors
+#                           ,starttime=datetime.strptime('20200113', '%Y%m%d')
+#                           ,endtime=datetime.strptime('20200113', '%Y%m%d')
+#                           ,freq = 'd'
+#                           ,check = False)
+# print('done load feature')
+# stk_price = fapi.quotes(asset_code=None
+#                                   ,starttime=None
+#                                   ,endtime=datetime.strptime('20200113', '%Y%m%d')
+#                                   ,period=1
+#                                   ,fields = 'Close'
+#                                   ,freq='day'
+#                                   ,adj = None)
+# print('done get price')
+# stk_price.set_index(stk_price['StockCode'],inplace=True)
+# stk_hold = pd.Series(index = stk_price.index
+#                      ,data =np.floor(np.random.rand(stk_price.__len__())*1000)+100)
+# f_return = pd.Series(oldmo.expFreturn)
+# f_cov = oldmo.FreturnCov
+# print('done get cov and feature return')
+# portfolioOptimizor(stk_feature=stk_feature
+#                    , stk_price=stk_price['Close']
+#                    , stk_hold =stk_hold
+#                    , f_return = f_return
+#                    , f_cov = f_cov
+#                    , feeRate = 0.003
+#                    , totalNV=100000000)
+
+#测试easytrader下单
+# import easytrader as et
+# user = et.use('yh_client')
+# #user.prepare(user='202100007679',password='987748',exe_path='D:/双子星金融终端独立交易-中国银河证券/xiadan.exe')
+# user.connect(exe_path='D:/双子星金融终端独立交易-中国银河证券/xiadan.exe')
+# user.market_buy('162411', amount=100)
+
+
+#测试portfolioOptimizor(函数)
+# if(__name__=='__main__'):
+#     from time import time
+#     t1 = time()
+#     from core.model.MultiFactor import MultiFactor
+#     from datetime import datetime
+#     from core.features.DescriptorImpls import *
+#     from core.fundamentals.getfundamentals import fundamentalApi as fApi
+#     from core.model.portfolioOptimizor import portfolioOptimizor
+#     oldModel = MultiFactor.load_model(forcast_period=4)
+#     stk_return = oldModel.forcastStkReturn(check=False)['e_ret']
+#     stk_price = fApi.quotes(asset_code=None, starttime=None, endtime=datetime.strptime('20200115','%Y%M%d'), period=1, fields='Close',
+#                             freq='day', adj=None)
+#     stk_price.set_index('StockCode', inplace=True)
+#     cashrow = pd.DataFrame({'Close': 1}, index=['cash'])
+#     stk_price = stk_price.append(cashrow)
+#     stk_price = stk_price['Close']
+#     base = {'cash':500000,'688388.SH':2000,'600400.SH':50000}
+#     print(time() - t1)
+#     wawa = portfolioOptimizor(stk_return=stk_return,stk_price=stk_price,stk_cov=None,stk_hold=base,feeRate=0.003)
+#     a = 1
+
+#测试OrderExecutor
+# if(__name__=='__main__'):
+#     from core.model.MultiFactor import MultiFactor
+#     from datetime import datetime
+#     from core.features.DescriptorImpls import *
+#     from core.fundamentals.getfundamentals import fundamentalApi as fApi
+#     from core.model.ModelAssembler import *
+#     orderExecutor = DecisionMaker()
+#     orderExecutor.reBase()
+#     orderExecutor.getTopModelFromDB()
+#     orderExecutor.makeOptimizeOrder()
+
+
+
